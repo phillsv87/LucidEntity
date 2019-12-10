@@ -61,6 +61,7 @@ namespace GenModel
             string file = null;
             string csOut = null;
             string tsOut = null;
+            string ns = null;
             string collectionType = "List";
 
             for(int i=0;i<args.Length;i++){
@@ -86,11 +87,20 @@ namespace GenModel
                             tsOut=null;
                         }
                         break;
+
+                    case "-namespace":
+                        ns=args[++i];
+                        break;
+                        
                 }
             }
             
             if(file==null){
                 throw new Exception("-csv required");
+            }
+
+            if(ns==null){
+                throw new Exception("-namespace required");
             }
 
 
@@ -242,7 +252,13 @@ namespace GenModel
                         var filepath = Path.GetFullPath(Path.Combine(csOut, type + ".cs"));
                         $"// {filepath}".Dump();
 
-                        var def = string.Format(tmpl, isFlags ? "[Flags]" : "", isEnum ? "enum" : "partial class", type, builder.ToString()).Dump();
+                        var def = string.Format(
+                            tmpl,
+                            isFlags ? "[Flags]" : "",
+                            isEnum ? "enum" : "partial class",
+                            type,
+                            builder.ToString(),
+                            ns).Dump();
                         File.WriteAllText(filepath, def); ;
                     }
 
@@ -280,7 +296,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
-namespace ITP
+namespace {4}
 {{
     {0}
     public {1} {2}

@@ -4,6 +4,7 @@ param(
     [string]$tsOut="null",
     [string]$collectionType="List",
     [string]$csv=$(throw "-csv required"),
+    [string]$namespace=$(throw "-namespace required"),
     [string]$script=$(throw "-script required")
 )
 
@@ -23,6 +24,7 @@ $content="#!/usr/local/bin/pwsh`n"
 $content+= `
     '&"$PSScriptRoot/'+$rel+'/ProcessModel.ps1"' + `
     ' -csv "$PSScriptRoot/'+$csv+'"'+ `
+    ' -namespace '+$namespace+ `
     ' -tsout '+$tsOut+ `
     ' -csout '+$csOut+ `
     "`n"
