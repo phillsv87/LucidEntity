@@ -22,6 +22,14 @@ if($tsOut -ne 'null'){
     $tsOut='"$PSScriptRoot/'+$tsOut+'"'
 }
 
+if($dbClass -ne 'null'){
+    $dbClass='"$PSScriptRoot/'+$dbClass+'"'
+}
+
+if($dbInterface -ne 'null'){
+    $dbInterface='"$PSScriptRoot/'+$dbInterface+'"'
+}
+
 $rel=Resolve-Path -Relative $PSScriptRoot
 $nl=' `'+"`n    "
 
