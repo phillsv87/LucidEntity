@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using CsvHelper;
@@ -18,11 +19,20 @@ namespace GenModel
             {"int","number" },
             {"double","number" },
             {"decimal","number" },
+            {"long","number" },
             {"guid","string" },
             {"timespan","string" },
             {"datetime","string|Date" },
             {"datetimeoffset","string|Date" },
         };
+
+        private static string[] SpecialExtends = {
+            "enum",
+            "flags",
+            "interface"
+        };
+
+        private static char[] ExtendSplit = {' ',','};
 
         private static string ToTsType(string type)
         {
@@ -137,11 +147,14 @@ namespace GenModel
                     tsBuilder.Clear();
                     type = csv.GetField("Text Area 1");
                     var parts = type.Split(':');
-                    var isEnum = parts.Length > 1 && parts[1].ToLower().Contains("enum");
-                    var isFlags = parts.Length > 1 && parts[1].ToLower().Contains("flags");
-                    if(isEnum){
-                        type=parts[0];
-                    }
+                    type = parts[0];
+                    var extend = (parts.Length > 1 ? parts[1] : string.Empty)
+                        .Split(ExtendSplit, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s=>s.Trim())
+                        .ToArray();
+                    var isInterface = extend.Contains("interface");
+                    var isEnum = extend.Contains("enum");
+                    var isFlags = extend.Contains("flags");
                     type=nameReg.Match(type).Value;
                     for(int i=11;;i++){
                         csv.TryGetField<string>(i,out string value);
@@ -217,7 +230,7 @@ namespace GenModel
                         }
                         else
                         {
-                            builder.Append($"        public {propType} {name} {{ get; set; }}\n");
+                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
                             tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
                             
                             if( name!="Id" && name.EndsWith("Id") &&
@@ -252,14 +265,19 @@ namespace GenModel
                         var filepath = Path.GetFullPath(Path.Combine(csOut, type + ".cs"));
                         $"// {filepath}".Dump();
 
+                        var extendsString = string.Join(", ", extend
+                            .Where(e => !SpecialExtends.Contains(e)));
+
                         var def = string.Format(
                             tmpl,
                             isFlags ? "[Flags]" : "",
-                            isEnum ? "enum" : "partial class",
+                            isEnum ? "enum" : (isInterface?"interface":"partial class"),
                             type,
                             builder.ToString(),
-                            ns).Dump();
-                        File.WriteAllText(filepath, def); ;
+                            ns,
+                            string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString)
+                            .Dump();
+                        File.WriteAllText(filepath, def);
                     }
 
 
@@ -299,7 +317,7 @@ using System.Text;
 namespace {4}
 {{
     {0}
-    public {1} {2}
+    public {1} {2} {5}
     {{
 {3}
     }}
