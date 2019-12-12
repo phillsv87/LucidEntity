@@ -71,6 +71,10 @@ namespace GenModel
             string file = null;
             string csOut = null;
             string tsOut = null;
+            string dbInterface = null;
+            string dbClass = null;
+            string dbInterfaceNs = null;
+            string dbClassNs = null;
             string ns = null;
             string collectionType = "List";
 
@@ -99,9 +103,45 @@ namespace GenModel
                         break;
 
                     case "-namespace":
-                        ns=args[++i];
+                        ns = args[++i];
+                        if (ns == "null")
+                        {
+                            ns = null;
+                        }
                         break;
-                        
+
+                    case "-dbinterface":
+                        dbInterface = args[++i];
+                        if (dbInterface == "null")
+                        {
+                            dbInterface = null;
+                        }
+                        break;
+
+                    case "-dbclass":
+                        dbClass = args[++i];
+                        if (dbClass == "null")
+                        {
+                            dbClass = null;
+                        }
+                        break;
+
+                    case "-dbinterfacens":
+                        dbInterfaceNs = args[++i];
+                        if (dbInterfaceNs == "null")
+                        {
+                            dbInterfaceNs = null;
+                        }
+                        break;
+
+                    case "-dbclassns":
+                        dbClassNs = args[++i];
+                        if (dbClassNs == "null")
+                        {
+                            dbClassNs = null;
+                        }
+                        break;
+
                 }
             }
             
@@ -111,6 +151,16 @@ namespace GenModel
 
             if(ns==null){
                 throw new Exception("-namespace required");
+            }
+
+            if (dbClassNs == null)
+            {
+                dbClassNs = ns;
+            }
+
+            if (dbInterfaceNs == null)
+            {
+                dbInterfaceNs = ns;
             }
 
 
@@ -128,7 +178,8 @@ namespace GenModel
             var tsFile = new StringBuilder();
             var nameReg=new Regex(@"\w+");
             var annotationReg=new Regex(@"@(\w+)\s*:\s*(\w+)");
-            var dbSets=new StringBuilder();
+            var dbSets = new StringBuilder();
+            var dbSetsInterface = new StringBuilder();
 
             using (var reader = new StreamReader(file))
             using (var csv = new CsvReader(reader))
@@ -250,15 +301,30 @@ namespace GenModel
                         }
                     }
 
-                    if (!isEnum)
+                    if (!isEnum && !isInterface)
                     {
                         var pl=type;
-                        if(pl.EndsWith("s")){
-                            pl+="es";
-                        }else{
+                        if (pl.EndsWith("s"))
+                        {
+                            pl += "es";
+                        }
+                        else if (pl.EndsWith("y"))
+                        {
+                            pl = pl.Substring(0, pl.Length - 1) + "ies";
+                        }
+                        else
+                        {
                             pl+="s";
                         }
-                        dbSets.AppendLine($"        public virtual DbSet<{type}> {pl} {{ get; set; }}");
+                        if (dbClass != null)
+                        {
+                            dbSets.AppendLine($"        public virtual DbSet<{type}> {pl} {{ get; set; }}");
+                        }
+                        if (dbInterface != null)
+                        {
+                            dbSetsInterface.AppendLine($"        DbSet<{type}> {pl} {{ get; }}");
+                        }
+                        
                     }
 
                     if(csOut!=null){
@@ -299,8 +365,40 @@ namespace GenModel
                 $"tsOut = {tsOut}".Dump();
                 File.WriteAllText(tsOut, tsFile.ToString());
             }
-            
-            dbSets.ToString().Dump();
+
+            if (dbClass != null)
+            {
+                var name = Path.GetFileName(dbClass);
+                int x = name.IndexOf('.');
+                if (x != -1)
+                {
+                    name = name.Substring(0,x);
+                }
+                var value = string.Format(
+                    dbSetTmpl,
+                    dbClassNs,
+                    "class " + name,
+                    dbSets.ToString());
+                File.WriteAllText(dbClass, value);
+                value.Dump();
+            }
+
+            if (dbInterface != null)
+            {
+                var name = Path.GetFileName(dbInterface);
+                int x = name.IndexOf('.');
+                if (x != -1)
+                {
+                    name = name.Substring(0,x);
+                }
+                var value = string.Format(
+                    dbSetTmpl,
+                    dbInterfaceNs,
+                    "interface " + name,
+                    dbSetsInterface.ToString());
+                File.WriteAllText(dbInterface, value);
+                value.Dump();
+            }
         }
 
         static T Dump<T>(this T obj){
@@ -320,6 +418,19 @@ namespace {4}
     public {1} {2} {5}
     {{
 {3}
+    }}
+}}
+";
+
+const string dbSetTmpl =
+@"using System;
+using Microsoft.EntityFrameworkCore;
+
+namespace {0}
+{{
+    public partial {1}
+    {{
+{2}
     }}
 }}
 ";
