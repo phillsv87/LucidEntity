@@ -241,6 +241,13 @@ namespace GenModel
                         {
                             max = 255;
                         }
+
+                        bool isReadonly=false;
+                        if(annotations.TryGetValue("readonly",out string ro)){
+                            if(!bool.TryParse(ro,out isReadonly)){
+                                throw new FormatException("Invalid @readonly annotation format: @readonly:"+ro);
+                            }
+                        }
                         
                         var prop=value.Split(':');
                         string name;
@@ -281,7 +288,7 @@ namespace GenModel
                         }
                         else
                         {
-                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
+                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}\n");
                             tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
                             
                             if( name!="Id" && name.EndsWith("Id") &&
