@@ -13,6 +13,10 @@ namespace GenModel
     public static class Program
     {
 
+        private static readonly string[] NoPlural={
+            "Media"
+        };
+
         private static Dictionary<string, string> TsTypeMap = new Dictionary<string, string>()
         {
             {"bool","boolean" },
@@ -26,7 +30,7 @@ namespace GenModel
             {"datetimeoffset","string|Date" },
         };
 
-        private static string[] SpecialExtends = {
+        private static readonly string[] SpecialExtends = {
             "enum",
             "flags",
             "interface"
@@ -311,17 +315,19 @@ namespace GenModel
                     if (!isEnum && !isInterface)
                     {
                         var pl=type;
-                        if (pl.EndsWith("s"))
-                        {
-                            pl += "es";
-                        }
-                        else if (pl.EndsWith("y"))
-                        {
-                            pl = pl.Substring(0, pl.Length - 1) + "ies";
-                        }
-                        else
-                        {
-                            pl+="s";
+                        if(NoPlural.All(np=>!pl.EndsWith(np))){
+                            if (pl.EndsWith("s"))
+                            {
+                                pl += "es";
+                            }
+                            else if (pl.EndsWith("y"))
+                            {
+                                pl = pl.Substring(0, pl.Length - 1) + "ies";
+                            }
+                            else
+                            {
+                                pl+="s";
+                            }
                         }
                         if (dbClass != null)
                         {
