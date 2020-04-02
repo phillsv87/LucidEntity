@@ -304,8 +304,10 @@ namespace GenModel
                                 }else{
                                     propType=name;
                                 }
-                                builder.Append($"        public {propType} {name} {{ get; set; }}\n");
-                                tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
+                                if(propType!="none"){
+                                    builder.Append($"        public {propType} {name} {{ get; set; }}\n");
+                                    tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
+                                }
                             }
                             builder.Append("\n");
                             tsBuilder.Append("\n");
