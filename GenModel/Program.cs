@@ -282,7 +282,9 @@ namespace GenModel
 
                         if (propType.ToLower() == "string")
                         {
-                            builder.Append($"        [MaxLength({max})]\n");
+                            if(max>0){
+                                builder.Append($"        [MaxLength({max})]\n");
+                            }
                         }
 
                         if (isEnum)
