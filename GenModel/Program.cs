@@ -280,11 +280,9 @@ namespace GenModel
                             isTsOptional=true;
                         }
 
-                        if (propType.ToLower() == "string")
+                        if (propType.ToLower() == "string" && max>0)
                         {
-                            if(max>0){
-                                builder.Append($"        [MaxLength({max})]\n");
-                            }
+                            builder.Append($"        [MaxLength({max})]\n");
                         }
 
                         if (isEnum)
