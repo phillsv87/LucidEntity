@@ -210,6 +210,8 @@ namespace GenModel
                     var isInterface = extend.Contains("interface");
                     var isEnum = extend.Contains("enum");
                     var isFlags = extend.Contains("flags");
+                    var usingNs=new Dictionary<string,bool>();
+
                     type=nameReg.Match(type).Value;
                     for(int i=11;;i++){
                         csv.TryGetField<string>(i,out string value);
@@ -244,6 +246,19 @@ namespace GenModel
                         else
                         {
                             max = 255;
+                        }
+
+                        string defaultValue=null;
+                        bool enumClassDefault=false;
+
+                        if(annotations.TryGetValue("ecd",out string ecdStr)){
+                            if(!bool.TryParse(ecdStr,out enumClassDefault)){
+                                throw new FormatException("Invalid @ecd annotation format: @ecd:"+ecdStr);
+                            }
+                            if(enumClassDefault){
+                                annotations["readonly"]="true";
+
+                            }
                         }
 
                         bool isReadonly=false;
@@ -285,6 +300,17 @@ namespace GenModel
                             builder.Append($"        [MaxLength({max})]\n");
                         }
 
+                        if(enumClassDefault){
+                            annotations["default"]=propType+"."+type;
+                        }
+
+                        if(annotations.ContainsKey("default")){
+                            usingNs["System.ComponentModel"]=true;
+                            defaultValue=annotations["default"];
+                        }
+
+                        
+
                         if (isEnum)
                         {
                             builder.Append($"        {name} = {propType},\n");
@@ -292,7 +318,11 @@ namespace GenModel
                         }
                         else
                         {
-                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}\n");
+                            var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
+                            if(defaultValue!=null){
+                                builder.Append("        [DefaultValue("+defaultValue+")]\n");
+                            }
+                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}{defaultSyntax}\n");
                             tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
                             
                             if( name!="Id" && name.EndsWith("Id") &&
@@ -349,6 +379,8 @@ namespace GenModel
                         var extendsString = string.Join(", ", extend
                             .Where(e => !SpecialExtends.Contains(e)));
 
+                        var usingSyntax=string.Join("",usingNs.Select(p=>"using "+p.Key+";\n"));
+
                         var def = string.Format(
                             tmpl,
                             isFlags ? "[Flags]" : "",
@@ -356,7 +388,8 @@ namespace GenModel
                             type,
                             builder.ToString(),
                             ns,
-                            string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString)
+                            string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString,
+                            usingSyntax)
                             .Dump();
                         File.WriteAllText(filepath, def);
                     }
@@ -426,7 +459,7 @@ const string tmpl =
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
-
+{6}
 namespace {4}
 {{
     {0}
