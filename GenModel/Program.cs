@@ -335,7 +335,7 @@ namespace GenModel
                                     propType=name;
                                 }
                                 if(propType!="none"){
-                                    builder.Append($"        public {propType} {name} {{ get; set; }}\n");
+                                    builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
                                     tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
                                 }
                             }
