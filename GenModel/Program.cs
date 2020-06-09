@@ -249,6 +249,16 @@ namespace GenModel
                             max = 255;
                         }
 
+                        
+                        bool json;
+                        if(annotations.TryGetValue("json",out string ji)){
+                            if(!bool.TryParse(ji,out json)){
+                                throw new FormatException("Invalid @jsonIgnore value:"+ji);
+                            }
+                        }else{
+                            json=true;
+                        }
+
                         string defaultValue=null;
                         bool enumClassDefault=false;
 
@@ -315,16 +325,24 @@ namespace GenModel
                         if (isEnum)
                         {
                             builder.Append($"        {name} = {propType},\n");
-                            tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}={ToTsType(propType)},\n");
+                            if(json){
+                                tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}={ToTsType(propType)},\n");
+                            }
                         }
                         else
                         {
+                            if(!json){
+                                builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
+                                builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                            }
                             var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                             if(defaultValue!=null){
                                 builder.Append("        [DefaultValue("+defaultValue+")]\n");
                             }
                             builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}{defaultSyntax}\n");
-                            tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
+                            if(json){
+                                tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
+                            }
                             
                             if( name!="Id" && name.EndsWith("Id") &&
                                 (propType == "int" || propType == "int?" || propType == "Guid" || propType == "Guid?"))
@@ -337,11 +355,15 @@ namespace GenModel
                                 }
                                 if(propType!="none"){
                                     builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
-                                    tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
+                                    if(json){
+                                        tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
+                                    }
                                 }
                             }
                             builder.Append("\n");
-                            tsBuilder.Append("\n");
+                            if(json){
+                                tsBuilder.Append("\n");
+                            }
                         }
                     }
 
