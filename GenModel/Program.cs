@@ -34,7 +34,8 @@ namespace GenModel
         private static readonly string[] SpecialExtends = {
             "enum",
             "flags",
-            "interface"
+            "interface",
+            "jsonIgnore"
         };
 
         private static char[] ExtendSplit = {' ',','};
@@ -211,6 +212,7 @@ namespace GenModel
                     var isInterface = extend.Contains("interface");
                     var isEnum = extend.Contains("enum");
                     var isFlags = extend.Contains("flags");
+                    var ignoreJsonClass = extend.Contains("jsonIgnore");
                     var usingNs=new Dictionary<string,bool>();
 
                     type=nameReg.Match(type).Value;
@@ -354,6 +356,10 @@ namespace GenModel
                                     propType=name;
                                 }
                                 if(propType!="none"){
+                                    if(!json){
+                                        builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
+                                        builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                                    }
                                     builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
                                     if(json){
                                         tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
@@ -419,7 +425,7 @@ namespace GenModel
 
 
 
-                    if (tsOut != null)
+                    if (tsOut != null && !ignoreJsonClass)
                     {
                         var def = string.Format(tsTmpl, "", isEnum ? "enum" : "interface", type, tsBuilder.ToString()).Dump();
                         tsFile.Append(def);
