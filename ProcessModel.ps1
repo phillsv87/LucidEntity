@@ -7,6 +7,7 @@ param(
     [string]$dbClassNs="null",
     [string]$dbInterfaceNs="null",
     [string]$collectionType="List",
+    [string]$jsonNav="true",
     [string]$csv=$(throw "-csv required"),
     [string]$namespace=$(throw "-namespace required")
 )
@@ -20,4 +21,5 @@ dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
     -dbInterface "$dbInterface" `
     -dbClassNs "$dbClassNs" `
     -dbInterfaceNs "$dbInterfaceNs" `
-    -collectionType "$collectionType"
+    -collectionType "$collectionType" `
+    -jsonNav "$jsonNav"

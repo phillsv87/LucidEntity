@@ -83,6 +83,7 @@ namespace GenModel
             string dbClassNs = null;
             string ns = null;
             string collectionType = "List";
+            bool jsonNav=true;
 
             for(int i=0;i<args.Length;i++){
                 switch(args[i].ToLower()){
@@ -147,6 +148,11 @@ namespace GenModel
                             dbClassNs = null;
                         }
                         break;
+
+                    case "-jsonnav":
+                        jsonNav=bool.Parse(args[++i]);
+                        break;
+
 
                 }
             }
@@ -253,13 +259,17 @@ namespace GenModel
 
                         
                         bool json;
+                        bool jsonExplicit;
                         if(annotations.TryGetValue("json",out string ji)){
+                            jsonExplicit=true;
                             if(!bool.TryParse(ji,out json)){
                                 throw new FormatException("Invalid @jsonIgnore value:"+ji);
                             }
                         }else{
+                            jsonExplicit=false;
                             json=true;
                         }
+                        var jsonNavProp=jsonNav?json:json&&jsonExplicit;
 
                         string defaultValue=null;
                         bool enumClassDefault=false;
@@ -293,6 +303,9 @@ namespace GenModel
                         }
                         
                         if(propType.Contains('[')){
+                            if(!jsonNavProp){
+                                json=false;
+                            }
                             if(propType=="[]"){
                                 propType=name.Substring(0,name.Length-1);
                             }else{
@@ -355,13 +368,14 @@ namespace GenModel
                                 }else{
                                     propType=name;
                                 }
+                                
                                 if(propType!="none"){
-                                    if(!json){
+                                    if(!jsonNavProp){
                                         builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
                                         builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
                                     }
                                     builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
-                                    if(json){
+                                    if(jsonNavProp){
                                         tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
                                     }
                                 }
