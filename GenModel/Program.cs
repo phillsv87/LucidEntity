@@ -290,16 +290,24 @@ namespace GenModel
                                 throw new FormatException("Invalid @readonly annotation format: @readonly:"+ro);
                             }
                         }
+
+                        bool isTsOptional=true;
+                        
                         
                         var prop=value.Split(':');
                         string name;
                         string propType;
-                        bool isTsOptional=false;
                         if(prop.Length==1){
                             throw new Exception(type+"."+value+" requires a type");
                         }else{
                             name=nameReg.Match(prop[0]).Value;
                             propType=prop[1].Trim();
+                        }
+
+                        var isRequired=propType.EndsWith('!');
+                        if(isRequired){
+                            propType=propType.Replace("!","");
+                            isTsOptional=false;
                         }
                         
                         if(propType.Contains('[')){
@@ -318,7 +326,6 @@ namespace GenModel
                         {
                             builder.Append($"        [Timestamp]\n");
                             propType="DateTime?";
-                            isTsOptional=true;
                         }
 
                         if (propType.ToLower() == "string" && max>0)
@@ -336,12 +343,18 @@ namespace GenModel
                         }
 
                         
+                        if(annotations.TryGetValue("tsRequired",out string tr)){
+                            if(!bool.TryParse(tr,out var tsRequired)){
+                                throw new FormatException("Invalid @tsRequired annotation format: @tsRequired:"+ro);
+                            }
+                            isTsOptional=!tsRequired;
+                        }
 
                         if (isEnum)
                         {
                             builder.Append($"        {name} = {propType},\n");
                             if(json){
-                                tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}={ToTsType(propType)},\n");
+                                tsBuilder.Append($"    {name}={ToTsType(propType)},\n");
                             }
                         }
                         else
@@ -349,6 +362,9 @@ namespace GenModel
                             if(!json){
                                 builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
                                 builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                            }
+                            if(isRequired){
+                                builder.Append("        [Required]\n");
                             }
                             var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                             if(defaultValue!=null){
