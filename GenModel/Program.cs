@@ -189,7 +189,7 @@ namespace GenModel
             var tsBuilder = new StringBuilder();
             var tsFile = new StringBuilder();
             var nameReg=new Regex(@"\w+");
-            var annotationReg=new Regex(@"@(\w+)\s*:\s*(\w+)");
+            var annotationReg=new Regex(@"@([\w!?]+)\s*(:\s*(\w+))?");
             var dbSets = new StringBuilder();
             var dbSetsInterface = new StringBuilder();
 
@@ -241,7 +241,12 @@ namespace GenModel
                         var annotations=new Dictionary<string,string>();
                         value = annotationReg.Replace(value, (m) =>
                         {
-                            annotations[m.Groups[1].Value] = m.Groups[2].Value;
+                            var gv=m.Groups[3].Value;
+                            if(!string.IsNullOrWhiteSpace(gv)){
+                                annotations[m.Groups[1].Value] = gv;
+                            }else{
+                                annotations[m.Groups[1].Value] = "true";
+                            }
                             return string.Empty;
                         });
                         int max;
@@ -257,13 +262,14 @@ namespace GenModel
                             max = 255;
                         }
 
+                        string att;
                         
                         bool json;
                         bool jsonExplicit;
-                        if(annotations.TryGetValue("json",out string ji)){
+                        if(annotations.TryGetValue("json",out att)){
                             jsonExplicit=true;
-                            if(!bool.TryParse(ji,out json)){
-                                throw new FormatException("Invalid @jsonIgnore value:"+ji);
+                            if(!bool.TryParse(att,out json)){
+                                throw new FormatException("Invalid @jsonIgnore value:"+att);
                             }
                         }else{
                             jsonExplicit=false;
@@ -274,9 +280,9 @@ namespace GenModel
                         string defaultValue=null;
                         bool enumClassDefault=false;
 
-                        if(annotations.TryGetValue("ecd",out string ecdStr)){
-                            if(!bool.TryParse(ecdStr,out enumClassDefault)){
-                                throw new FormatException("Invalid @ecd annotation format: @ecd:"+ecdStr);
+                        if(annotations.TryGetValue("ecd",out att)){
+                            if(!bool.TryParse(att,out enumClassDefault)){
+                                throw new FormatException("Invalid @ecd annotation format: @ecd:"+att);
                             }
                             if(enumClassDefault){
                                 annotations["readonly"]="true";
@@ -285,13 +291,13 @@ namespace GenModel
                         }
 
                         bool isReadonly=false;
-                        if(annotations.TryGetValue("readonly",out string ro)){
-                            if(!bool.TryParse(ro,out isReadonly)){
-                                throw new FormatException("Invalid @readonly annotation format: @readonly:"+ro);
+                        if(annotations.TryGetValue("readonly",out att)){
+                            if(!bool.TryParse(att,out isReadonly)){
+                                throw new FormatException("Invalid @readonly annotation format: @readonly:"+att);
                             }
                         }
 
-                        bool isTsOptional=true;
+                        bool isJsonOptional=true;
                         
                         
                         var prop=value.Split(':');
@@ -307,7 +313,7 @@ namespace GenModel
                         var isRequired=propType.EndsWith('!');
                         if(isRequired){
                             propType=propType.Replace("!","");
-                            isTsOptional=false;
+                            isJsonOptional=false;
                         }
                         
                         if(propType.Contains('[')){
@@ -342,12 +348,22 @@ namespace GenModel
                             defaultValue=annotations["default"];
                         }
 
-                        
-                        if(annotations.TryGetValue("tsRequired",out string tr)){
-                            if(!bool.TryParse(tr,out var tsRequired)){
-                                throw new FormatException("Invalid @tsRequired annotation format: @tsRequired:"+ro);
+                        if(name=="Id"){
+                            isJsonOptional=false;
+                        }
+
+                        if(annotations.TryGetValue("json!",out att)){
+                            if(!bool.TryParse(att,out var jsonRequired)){
+                                throw new FormatException("Invalid @json! annotation format: @json!:"+att);
                             }
-                            isTsOptional=!tsRequired;
+                            isJsonOptional=!jsonRequired;
+                        }
+
+                        if(annotations.TryGetValue("json?",out att)){
+                            if(!bool.TryParse(att,out var jsonOptional)){
+                                throw new FormatException("Invalid @json? annotation format: @json?:"+att);
+                            }
+                            isJsonOptional=jsonOptional;
                         }
 
                         if (isEnum)
@@ -372,7 +388,7 @@ namespace GenModel
                             }
                             builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}{defaultSyntax}\n");
                             if(json){
-                                tsBuilder.Append($"    {name}{(isTsOptional?"?":"")}:{ToTsType(propType)};\n");
+                                tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                             }
                             
                             if( name!="Id" && name.EndsWith("Id") &&
@@ -392,7 +408,7 @@ namespace GenModel
                                     }
                                     builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
                                     if(jsonNavProp){
-                                        tsBuilder.Append($"    {name}:{ToTsType(propType)};\n");
+                                        tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                                     }
                                 }
                             }
