@@ -188,7 +188,7 @@ namespace GenModel
             var builder = new StringBuilder();
             var tsBuilder = new StringBuilder();
             var tsFile = new StringBuilder();
-            var nameReg=new Regex(@"\w+");
+            var nameReg=new Regex(@"[\w<>]+");
             var annotationReg=new Regex(@"@([\w!?]+)\s*(:\s*(\w+))?");
             var dbSets = new StringBuilder();
             var dbSetsInterface = new StringBuilder();
@@ -209,7 +209,7 @@ namespace GenModel
                     builder.Clear();
                     tsBuilder.Clear();
                     type = csv.GetField("Text Area 1");
-                    var parts = type.Split(':');
+                    var parts = type.Split(':',2,StringSplitOptions.None);
                     type = parts[0];
                     var extend = (parts.Length > 1 ? parts[1] : string.Empty)
                         .Split(ExtendSplit, StringSplitOptions.RemoveEmptyEntries)
@@ -448,11 +448,19 @@ namespace GenModel
                     }
 
                     if(csOut!=null){
-                        var filepath = Path.GetFullPath(Path.Combine(csOut, type + ".cs"));
+                        var filepath = Path.GetFullPath(Path.Combine(csOut, type.Split('<')[0] + ".cs"));
                         $"// {filepath}".Dump();
 
                         var extendsString = string.Join(", ", extend
-                            .Where(e => !SpecialExtends.Contains(e)));
+                            .Where(e => !SpecialExtends.Contains(e) && !e.Contains(':')));
+
+                        var wheres=extend.Where(e=>e.Contains(':')).Select(e=>"where "+e).ToList();
+                        if(wheres.Count>0){
+                            var str=string.Join(' ',wheres);
+                            extendsString=str+(string.IsNullOrWhiteSpace(extendsString)?"":", "+str);
+                        }else{
+                            extendsString=string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString;
+                        }
 
                         var usingSyntax=string.Join("",usingNs.Select(p=>"using "+p.Key+";\n"));
 
@@ -463,7 +471,7 @@ namespace GenModel
                             type,
                             builder.ToString(),
                             ns,
-                            string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString,
+                            extendsString,
                             usingSyntax)
                             .Dump();
                         File.WriteAllText(filepath, def);
