@@ -297,6 +297,14 @@ namespace GenModel
                             }
                         }
 
+                        bool notMapped=false;
+                        if(annotations.TryGetValue("notMapped",out att)){
+                            if(!bool.TryParse(att,out notMapped)){
+                                throw new FormatException("Invalid @notMapped annotation format: @notMapped:"+att);
+                            }
+                            usingNs["System.ComponentModel.DataAnnotations.Schema"]=true;
+                        }
+
                         bool isJsonOptional=true;
                         
                         
@@ -382,6 +390,9 @@ namespace GenModel
                             if(isRequired){
                                 builder.Append("        [Required]\n");
                             }
+                            if(notMapped){
+                                builder.Append("        [NotMapped]\n");
+                            }
                             var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                             if(defaultValue!=null){
                                 builder.Append("        [DefaultValue("+defaultValue+")]\n");
@@ -391,7 +402,7 @@ namespace GenModel
                                 tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                             }
                             
-                            if( name!="Id" && name.EndsWith("Id") &&
+                            if( name!="Id" && name.EndsWith("Id") && !notMapped &&
                                 (propType == "int" || propType == "int?" || propType == "Guid" || propType == "Guid?"))
                             {
                                 name = name.Substring(0, name.Length - 2);
