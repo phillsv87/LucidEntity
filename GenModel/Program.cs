@@ -200,7 +200,7 @@ namespace GenModel
                 csv.Read();
                 csv.ReadHeader();
                 while (csv.Read())
-                {
+                { // class loop
                     var type=csv.GetField("Shape Library");
                     if(type!="Entity Relationship"){
                         continue;
@@ -222,7 +222,9 @@ namespace GenModel
                     var usingNs=new Dictionary<string,bool>();
 
                     type=nameReg.Match(type).Value;
-                    for(int i=11;;i++){
+                    var copyFunctions=new Dictionary<string,List<string>>();
+                    for(int i=11;;i++)
+                    { // property loop
                         csv.TryGetField<string>(i,out string value);
                         if(string.IsNullOrWhiteSpace(value)){
                             break;
@@ -249,20 +251,21 @@ namespace GenModel
                             }
                             return string.Empty;
                         });
+
+                        string att;
+
                         int max;
-                        if(annotations.TryGetValue("max",out string mv))
+                        if(annotations.TryGetValue("max",out att))
                         {
-                            if(!int.TryParse(mv,out max))
+                            if(!int.TryParse(att,out max))
                             {
-                                throw new FormatException("Invalid @max annotation format: @max:"+mv);
+                                throw new FormatException("Invalid @max annotation format: @max:"+att);
                             }
                         }
                         else
                         {
                             max = 255;
                         }
-
-                        string att;
                         
                         bool json;
                         bool jsonExplicit;
@@ -334,6 +337,13 @@ namespace GenModel
                                 propType=propType.Replace("[","").Replace("]","");
                             }
                             propType=collectionType+"<"+propType+">";
+                        }
+
+                        if(annotations.TryGetValue("copy",out att)){
+                            if(!copyFunctions.ContainsKey(att)){
+                                copyFunctions[att]=new List<string>();
+                            }
+                            copyFunctions[att].Add(name);
                         }
 
                         if(propType.ToLower() == "updateid")
@@ -456,6 +466,21 @@ namespace GenModel
                             dbSetsInterface.AppendLine($"        DbSet<{type}> {pl} {{ get; }}");
                         }
                         
+                    }
+
+                    foreach(var copy in copyFunctions){
+                        builder.Append(
+$@"        public static {type} {copy.Key}({type} obj)
+        {{
+            if(obj==null){{
+                return null;
+            }}
+            return new {type}(){{
+");                     foreach(var prop in copy.Value){
+                            builder.Append($"                {prop}=obj.{prop},\n");
+                        }
+                        builder.Append("            };\n");
+                        builder.Append("        }\n");
                     }
 
                     if(csOut!=null){
