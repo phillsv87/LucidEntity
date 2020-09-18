@@ -13,6 +13,12 @@ namespace GenModel
     public static class Program
     {
 
+        private enum MetaType
+        {
+            None = 0,
+            Generator = 1
+        }
+
         private static readonly string[] NoPlural={
             "Media",
             "Data"
@@ -153,6 +159,15 @@ namespace GenModel
                         jsonNav=bool.Parse(args[++i]);
                         break;
 
+                    case "-attach-debugger":
+                        Console.WriteLine("Waiting for Debugger to Attach");
+                        Console.WriteLine("PID:"+System.Diagnostics.Process.GetCurrentProcess().Id);
+                        while(!System.Diagnostics.Debugger.IsAttached){
+                            System.Threading.Thread.Sleep(100);
+                        }
+                        System.Diagnostics.Debugger.Break();
+                        break;
+
 
                 }
             }
@@ -185,14 +200,12 @@ namespace GenModel
                 Directory.CreateDirectory(csOut);
             }
 
-            var builder = new StringBuilder();
-            var tsBuilder = new StringBuilder();
-            var tsFile = new StringBuilder();
-            var nameReg=new Regex(@"[\w<>]+");
-            var annotationReg=new Regex(@"@([\w!?]+)\s*(:\s*(\w+))?");
-            var dbSets = new StringBuilder();
-            var dbSetsInterface = new StringBuilder();
+            
 
+            var generators=new Dictionary<string,List<string>>();
+
+
+            // First Pass
             using (var reader = new StreamReader(file))
             using (var csv = new CsvReader(reader))
             {
@@ -205,24 +218,17 @@ namespace GenModel
                     if(type!="Entity Relationship"){
                         continue;
                     }
+                    
+                    type = csv.GetField("Text Area 1")?.Trim();
+                    if(type==null || !type.StartsWith("@")){
+                        continue;
+                    }
 
-                    builder.Clear();
-                    tsBuilder.Clear();
-                    type = csv.GetField("Text Area 1");
-                    var parts = type.Split(':',2,StringSplitOptions.None);
-                    type = parts[0];
-                    var extend = (parts.Length > 1 ? parts[1] : string.Empty)
-                        .Split(ExtendSplit, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s=>s.Trim())
-                        .ToArray();
-                    var isInterface = extend.Contains("interface");
-                    var isEnum = extend.Contains("enum");
-                    var isFlags = extend.Contains("flags");
-                    var ignoreJsonClass = extend.Contains("jsonIgnore");
-                    var usingNs=new Dictionary<string,bool>();
+                    MetaType mType;
+                    if(!Enum.TryParse<MetaType>(type.Substring(1),out mType)){
+                        continue;
+                    }
 
-                    type=nameReg.Match(type).Value;
-                    var copyFunctions=new Dictionary<string,List<string>>();
                     for(int i=11;;i++)
                     { // property loop
                         csv.TryGetField<string>(i,out string value);
@@ -234,242 +240,367 @@ namespace GenModel
                         if(value.StartsWith("#") || value.StartsWith(".")){
                             continue;
                         }
-                        
-                        int c=value.IndexOf('-');
-                        if(c!=-1){
-                            value=value.Substring(0,c).Trim();
-                        }
 
-                        var annotations=new Dictionary<string,string>();
-                        value = annotationReg.Replace(value, (m) =>
-                        {
-                            var gv=m.Groups[3].Value;
-                            if(!string.IsNullOrWhiteSpace(gv)){
-                                annotations[m.Groups[1].Value] = gv;
-                            }else{
-                                annotations[m.Groups[1].Value] = "true";
-                            }
-                            return string.Empty;
-                        });
-
-                        string att;
-
-                        int max;
-                        if(annotations.TryGetValue("max",out att))
-                        {
-                            if(!int.TryParse(att,out max))
-                            {
-                                throw new FormatException("Invalid @max annotation format: @max:"+att);
-                            }
-                        }
-                        else
-                        {
-                            max = 255;
-                        }
-                        
-                        bool json;
-                        bool jsonExplicit;
-                        if(annotations.TryGetValue("json",out att)){
-                            jsonExplicit=true;
-                            if(!bool.TryParse(att,out json)){
-                                throw new FormatException("Invalid @jsonIgnore value:"+att);
-                            }
-                        }else{
-                            jsonExplicit=false;
-                            json=true;
-                        }
-                        var jsonNavProp=jsonNav?json:json&&jsonExplicit;
-
-                        string defaultValue=null;
-                        bool enumClassDefault=false;
-
-                        if(annotations.TryGetValue("ecd",out att)){
-                            if(!bool.TryParse(att,out enumClassDefault)){
-                                throw new FormatException("Invalid @ecd annotation format: @ecd:"+att);
-                            }
-                            if(enumClassDefault){
-                                annotations["readonly"]="true";
-
-                            }
-                        }
-
-                        bool isReadonly=false;
-                        if(annotations.TryGetValue("readonly",out att)){
-                            if(!bool.TryParse(att,out isReadonly)){
-                                throw new FormatException("Invalid @readonly annotation format: @readonly:"+att);
-                            }
-                        }
-
-                        bool notMapped=false;
-                        if(annotations.TryGetValue("notMapped",out att)){
-                            if(!bool.TryParse(att,out notMapped)){
-                                throw new FormatException("Invalid @notMapped annotation format: @notMapped:"+att);
-                            }
-                            usingNs["System.ComponentModel.DataAnnotations.Schema"]=true;
-                        }
-
-                        bool isJsonOptional=true;
-                        
-                        
-                        var prop=value.Split(':');
-                        string name;
-                        string propType;
-                        if(prop.Length==1){
-                            throw new Exception(type+"."+value+" requires a type");
-                        }else{
-                            name=nameReg.Match(prop[0]).Value;
-                            propType=prop[1].Trim();
-                        }
-
-                        var isRequired=propType.EndsWith('!');
-                        if(isRequired){
-                            propType=propType.Replace("!","");
-                            isJsonOptional=false;
-                        }
-                        
-                        if(propType.Contains('[')){
-                            if(!jsonNavProp){
-                                json=false;
-                            }
-                            if(propType=="[]"){
-                                propType=name.Substring(0,name.Length-1);
-                            }else{
-                                propType=propType.Replace("[","").Replace("]","");
-                            }
-                            propType=collectionType+"<"+propType+">";
-                        }
-
-                        if(annotations.TryGetValue("copy",out att)){
-                            if(!copyFunctions.ContainsKey(att)){
-                                copyFunctions[att]=new List<string>();
-                            }
-                            copyFunctions[att].Add(name);
-                        }
-
-                        if(propType.ToLower() == "updateid")
-                        {
-                            builder.Append($"        [Timestamp]\n");
-                            propType="DateTime?";
-                        }
-
-                        if (propType.ToLower() == "string" && max>0)
-                        {
-                            builder.Append($"        [MaxLength({max})]\n");
-                        }
-
-                        if(enumClassDefault){
-                            annotations["default"]=propType+"."+type;
-                        }
-
-                        if(annotations.ContainsKey("default")){
-                            usingNs["System.ComponentModel"]=true;
-                            defaultValue=annotations["default"];
-                        }
-
-                        if(name=="Id"){
-                            isJsonOptional=false;
-                        }
-
-                        if(annotations.TryGetValue("json!",out att)){
-                            if(!bool.TryParse(att,out var jsonRequired)){
-                                throw new FormatException("Invalid @json! annotation format: @json!:"+att);
-                            }
-                            isJsonOptional=!jsonRequired;
-                        }
-
-                        if(annotations.TryGetValue("json?",out att)){
-                            if(!bool.TryParse(att,out var jsonOptional)){
-                                throw new FormatException("Invalid @json? annotation format: @json?:"+att);
-                            }
-                            isJsonOptional=jsonOptional;
-                        }
-
-                        if (isEnum)
-                        {
-                            builder.Append($"        {name} = {propType},\n");
-                            if(json){
-                                tsBuilder.Append($"    {name}={ToTsType(propType)},\n");
-                            }
-                        }
-                        else
-                        {
-                            if(!json){
-                                builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
-                                builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
-                            }
-                            if(isRequired){
-                                builder.Append("        [Required]\n");
-                            }
-                            if(notMapped){
-                                builder.Append("        [NotMapped]\n");
-                            }
-                            var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
-                            if(defaultValue!=null){
-                                builder.Append("        [DefaultValue("+defaultValue+")]\n");
-                            }
-                            builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}{defaultSyntax}\n");
-                            if(json){
-                                tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
-                            }
-                            
-                            if( name!="Id" && name.EndsWith("Id") && !notMapped &&
-                                (propType == "int" || propType == "int?" || propType == "Guid" || propType == "Guid?"))
-                            {
-                                name = name.Substring(0, name.Length - 2);
-                                if(prop.Length>2){
-                                    propType=prop[2].Trim();
-                                }else{
-                                    propType=name;
+                        switch(mType){
+                            case MetaType.Generator:{
+                                var parts=value.Split(':',2);
+                                if(parts.Length!=2){
+                                    throw new FormatException("Invalid Generator property - "+value);
                                 }
-                                
-                                if(propType!="none"){
-                                    if(!jsonNavProp){
-                                        builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
-                                        builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
-                                    }
-                                    builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
-                                    if(jsonNavProp){
-                                        tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
-                                    }
+
+                                var key=parts[0];
+
+                                if(!generators.ContainsKey(key)){
+                                    generators[key]=new List<string>();
                                 }
-                            }
-                            builder.Append("\n");
-                            if(json){
-                                tsBuilder.Append("\n");
+                                generators[key].Add(parts[1]);
+
+                                break;
                             }
                         }
+
                     }
 
-                    if (!isEnum && !isInterface)
-                    {
-                        var pl=type;
-                        if(NoPlural.All(np=>!pl.EndsWith(np))){
-                            if (pl.EndsWith("s"))
-                            {
-                                pl += "es";
+                }
+            }
+
+            StringBuilder dbSets=null;
+            StringBuilder tsFile=null;
+            StringBuilder dbSetsInterface=null;
+            var nameReg=new Regex(@"[\w<>]+");
+            var annotationReg=new Regex(@"@([\w!?]+)\s*(:\s*(\w+))?");
+            var generatedProperties=new Dictionary<string,List<string>>();
+
+            for(int pass=2;pass<=3;pass++){
+                var writeToFile=pass==3;
+                var includeGeneratedProps=pass==3;
+                var generateProperties=pass==2;
+
+                dbSets = new StringBuilder();
+                dbSetsInterface = new StringBuilder();
+                tsFile = new StringBuilder();
+
+                var builder = new StringBuilder();
+                var tsBuilder = new StringBuilder();
+
+                
+                using (var reader = new StreamReader(file))
+                using (var csv = new CsvReader(reader))
+                {
+                    
+                    csv.Read();
+                    csv.ReadHeader();
+                    while (csv.Read())
+                    { // class loop
+                        var type=csv.GetField("Shape Library");
+                        if(type!="Entity Relationship"){
+                            continue;
+                        }
+
+                        builder.Clear();
+                        tsBuilder.Clear();
+                        type = csv.GetField("Text Area 1");
+                        if(type.StartsWith('@')){
+                            continue;
+                        }
+                        var parts = type.Split(':',2,StringSplitOptions.None);
+                        type = parts[0];
+                        var extend = (parts.Length > 1 ? parts[1] : string.Empty)
+                            .Split(ExtendSplit, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(s=>s.Trim())
+                            .ToArray();
+                        var isInterface = extend.Contains("interface");
+                        var isEnum = extend.Contains("enum");
+                        var isFlags = extend.Contains("flags");
+                        var ignoreJsonClass = extend.Contains("jsonIgnore");
+                        var usingNs=new Dictionary<string,bool>();
+
+                        type=nameReg.Match(type).Value;
+                        var copyFunctions=new Dictionary<string,List<string>>();
+                        var propertyLines=new List<string>();
+                        for(int i=11;;i++)
+                        { // property loop
+                            csv.TryGetField<string>(i,out string value);
+                            if(string.IsNullOrWhiteSpace(value)){
+                                break;
                             }
-                            else if (pl.EndsWith("y"))
+                            
+                            value=value.Trim();
+                            if(value.StartsWith("#") || value.StartsWith(".")){
+                                continue;
+                            }
+
+                            propertyLines.Add(value);
+                        }
+
+                        if(includeGeneratedProps && generatedProperties.TryGetValue(type,out var genLines)){
+                            propertyLines.AddRange(genLines);
+                        }
+
+                        foreach(var v in propertyLines){
+                            
+                            var value=v;
+                            int c=value.IndexOf('-');
+                            if(c!=-1){
+                                value=value.Substring(0,c).Trim();
+                            }
+
+                            var annotations=new Dictionary<string,string>();
+                            value = annotationReg.Replace(value, (m) =>
                             {
-                                pl = pl.Substring(0, pl.Length - 1) + "ies";
+                                var gv=m.Groups[3].Value;
+                                if(!string.IsNullOrWhiteSpace(gv)){
+                                    annotations[m.Groups[1].Value] = gv;
+                                }else{
+                                    annotations[m.Groups[1].Value] = "true";
+                                }
+                                return string.Empty;
+                            });
+
+                            string att;
+
+                            int max;
+                            if(annotations.TryGetValue("max",out att))
+                            {
+                                if(!int.TryParse(att,out max))
+                                {
+                                    throw new FormatException("Invalid @max annotation format: @max:"+att);
+                                }
                             }
                             else
                             {
-                                pl+="s";
+                                max = 255;
+                            }
+
+                            string[] gen=null;
+                            if(annotations.TryGetValue("gen",out att)){
+                                gen=att.Split(',');
+                            }
+                            
+                            bool json;
+                            bool jsonExplicit;
+                            if(annotations.TryGetValue("json",out att)){
+                                jsonExplicit=true;
+                                if(!bool.TryParse(att,out json)){
+                                    throw new FormatException("Invalid @jsonIgnore value:"+att);
+                                }
+                            }else{
+                                jsonExplicit=false;
+                                json=true;
+                            }
+                            var jsonNavProp=jsonNav?json:json&&jsonExplicit;
+
+                            string defaultValue=null;
+                            bool enumClassDefault=false;
+
+                            if(annotations.TryGetValue("ecd",out att)){
+                                if(!bool.TryParse(att,out enumClassDefault)){
+                                    throw new FormatException("Invalid @ecd annotation format: @ecd:"+att);
+                                }
+                                if(enumClassDefault){
+                                    annotations["readonly"]="true";
+
+                                }
+                            }
+
+                            bool isReadonly=false;
+                            if(annotations.TryGetValue("readonly",out att)){
+                                if(!bool.TryParse(att,out isReadonly)){
+                                    throw new FormatException("Invalid @readonly annotation format: @readonly:"+att);
+                                }
+                            }
+
+                            bool notMapped=false;
+                            if(annotations.TryGetValue("notMapped",out att)){
+                                if(!bool.TryParse(att,out notMapped)){
+                                    throw new FormatException("Invalid @notMapped annotation format: @notMapped:"+att);
+                                }
+                                usingNs["System.ComponentModel.DataAnnotations.Schema"]=true;
+                            }
+
+                            bool isJsonOptional=true;
+                            
+                            
+                            var prop=value.Split(':');
+                            string name;
+                            string propType;
+                            if(prop.Length==1){
+                                throw new Exception(type+"."+value+" requires a type");
+                            }else{
+                                name=nameReg.Match(prop[0]).Value;
+                                propType=prop[1].Trim();
+                            }
+
+                            var isRequired=propType.EndsWith('!');
+                            if(isRequired){
+                                propType=propType.Replace("!","");
+                                isJsonOptional=false;
+                            }
+                            
+                            if(propType.Contains('[')){
+                                if(!jsonNavProp){
+                                    json=false;
+                                }
+                                if(propType=="[]"){
+                                    propType=name.Substring(0,name.Length-1);
+                                }else{
+                                    propType=propType.Replace("[","").Replace("]","");
+                                }
+                                propType=collectionType+"<"+propType+">";
+                            }
+
+                            if(annotations.TryGetValue("copy",out att)){
+                                if(!copyFunctions.ContainsKey(att)){
+                                    copyFunctions[att]=new List<string>();
+                                }
+                                copyFunctions[att].Add(name);
+                            }
+
+                            if(propType.ToLower() == "updateid")
+                            {
+                                builder.Append($"        [Timestamp]\n");
+                                propType="DateTime?";
+                            }
+
+                            if (propType.ToLower() == "string" && max>0)
+                            {
+                                builder.Append($"        [MaxLength({max})]\n");
+                            }
+
+                            if(enumClassDefault){
+                                annotations["default"]=propType+"."+type;
+                            }
+
+                            if(annotations.ContainsKey("default")){
+                                usingNs["System.ComponentModel"]=true;
+                                defaultValue=annotations["default"];
+                            }
+
+                            if(name=="Id"){
+                                isJsonOptional=false;
+                            }
+
+                            if(annotations.TryGetValue("json!",out att)){
+                                if(!bool.TryParse(att,out var jsonRequired)){
+                                    throw new FormatException("Invalid @json! annotation format: @json!:"+att);
+                                }
+                                isJsonOptional=!jsonRequired;
+                            }
+
+                            if(annotations.TryGetValue("json?",out att)){
+                                if(!bool.TryParse(att,out var jsonOptional)){
+                                    throw new FormatException("Invalid @json? annotation format: @json?:"+att);
+                                }
+                                isJsonOptional=jsonOptional;
+                            }
+
+                            if(gen!=null && generateProperties){
+                                foreach(var genName in gen){
+                                    if(!generators.TryGetValue(genName,out var genTemplates)){
+                                        throw new FormatException("No generator found for "+genName);
+                                    }
+                                    foreach(var template in genTemplates){
+                                        var tParts=template.Split(':',2);
+                                        if(tParts.Length!=2){
+                                            throw new FormatException($"Invalid generator line - {genName} - {template}");
+                                        }
+                                        var targetName=tParts[0].Trim();
+                                        if(!generatedProperties.TryGetValue(targetName,out var lines)){
+                                            generatedProperties[targetName]=lines=new List<string>();
+                                        }
+                                        lines.Add(tParts[1]
+                                            .Replace("{name}",name)
+                                            .Replace("{propType}",propType).Trim());
+                                    }
+                                }
+                            }
+
+                            if (isEnum)
+                            {
+                                builder.Append($"        {name} = {propType},\n");
+                                if(json){
+                                    tsBuilder.Append($"    {name}={ToTsType(propType)},\n");
+                                }
+                            }
+                            else
+                            {
+                                if(!json){
+                                    builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
+                                    builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                                }
+                                if(isRequired){
+                                    builder.Append("        [Required]\n");
+                                }
+                                if(notMapped){
+                                    builder.Append("        [NotMapped]\n");
+                                }
+                                var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
+                                if(defaultValue!=null){
+                                    builder.Append("        [DefaultValue("+defaultValue+")]\n");
+                                }
+                                builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get;{(isReadonly?"":" set;")} }}{defaultSyntax}\n");
+                                if(json){
+                                    tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
+                                }
+                                
+                                if( name!="Id" && name.EndsWith("Id") && !notMapped &&
+                                    (propType == "int" || propType == "int?" || propType == "Guid" || propType == "Guid?"))
+                                {
+                                    name = name.Substring(0, name.Length - 2);
+                                    if(prop.Length>2){
+                                        propType=prop[2].Trim();
+                                    }else{
+                                        propType=name;
+                                    }
+                                    
+                                    if(propType!="none"){
+                                        if(!jsonNavProp){
+                                            builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
+                                            builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                                        }
+                                        builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
+                                        if(jsonNavProp){
+                                            tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
+                                        }
+                                    }
+                                }
+                                builder.Append("\n");
+                                if(json){
+                                    tsBuilder.Append("\n");
+                                }
                             }
                         }
-                        if (dbClass != null)
-                        {
-                            dbSets.AppendLine($"        public virtual DbSet<{type}> {pl} {{ get; set; }}");
-                        }
-                        if (dbInterface != null)
-                        {
-                            dbSetsInterface.AppendLine($"        DbSet<{type}> {pl} {{ get; }}");
-                        }
-                        
-                    }
 
-                    foreach(var copy in copyFunctions){
-                        builder.Append(
+                        if (!isEnum && !isInterface)
+                        {
+                            var pl=type;
+                            if(NoPlural.All(np=>!pl.EndsWith(np))){
+                                if (pl.EndsWith("s"))
+                                {
+                                    pl += "es";
+                                }
+                                else if (pl.EndsWith("y"))
+                                {
+                                    pl = pl.Substring(0, pl.Length - 1) + "ies";
+                                }
+                                else
+                                {
+                                    pl+="s";
+                                }
+                            }
+                            if (dbClass != null)
+                            {
+                                dbSets.AppendLine($"        public virtual DbSet<{type}> {pl} {{ get; set; }}");
+                            }
+                            if (dbInterface != null)
+                            {
+                                dbSetsInterface.AppendLine($"        DbSet<{type}> {pl} {{ get; }}");
+                            }
+                            
+                        }
+
+                        foreach(var copy in copyFunctions){
+                            builder.Append(
 $@"        public static {type} {copy.Key}({type} obj)
         {{
             if(obj==null){{
@@ -477,54 +608,57 @@ $@"        public static {type} {copy.Key}({type} obj)
             }}
             return new {type}(){{
 ");                     foreach(var prop in copy.Value){
-                            builder.Append($"                {prop}=obj.{prop},\n");
-                        }
-                        builder.Append("            };\n");
-                        builder.Append("        }\n");
-                    }
-
-                    if(csOut!=null){
-                        var filepath = Path.GetFullPath(Path.Combine(csOut, type.Split('<')[0] + ".cs"));
-                        $"// {filepath}".Dump();
-
-                        var extendsString = string.Join(", ", extend
-                            .Where(e => !SpecialExtends.Contains(e) && !e.Contains(':')));
-
-                        var wheres=extend.Where(e=>e.Contains(':')).Select(e=>"where "+e).ToList();
-                        if(wheres.Count>0){
-                            var str=string.Join(' ',wheres);
-                            extendsString=str+(string.IsNullOrWhiteSpace(extendsString)?"":", "+str);
-                        }else{
-                            extendsString=string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString;
+                                builder.Append($"                {prop}=obj.{prop},\n");
+                            }
+                            builder.Append("            };\n");
+                            builder.Append("        }\n");
                         }
 
-                        var usingSyntax=string.Join("",usingNs.Select(p=>"using "+p.Key+";\n"));
+                        if(csOut!=null){
+                            var filepath = Path.GetFullPath(Path.Combine(csOut, type.Split('<')[0] + ".cs"));
+                            $"// {filepath}".Dump();
 
-                        var def = string.Format(
-                            tmpl,
-                            isFlags ? "[Flags]" : "",
-                            isEnum ? "enum" : (isInterface?"interface":"partial class"),
-                            type,
-                            builder.ToString(),
-                            ns,
-                            extendsString,
-                            usingSyntax)
-                            .Dump();
-                        File.WriteAllText(filepath, def);
+                            var extendsString = string.Join(", ", extend
+                                .Where(e => !SpecialExtends.Contains(e) && !e.Contains(':')));
+
+                            var wheres=extend.Where(e=>e.Contains(':')).Select(e=>"where "+e).ToList();
+                            if(wheres.Count>0){
+                                var str=string.Join(' ',wheres);
+                                extendsString=str+(string.IsNullOrWhiteSpace(extendsString)?"":", "+str);
+                            }else{
+                                extendsString=string.IsNullOrWhiteSpace(extendsString)?"":": "+extendsString;
+                            }
+
+                            var usingSyntax=string.Join("",usingNs.Select(p=>"using "+p.Key+";\n"));
+
+                            if(writeToFile){
+                                var def = string.Format(
+                                    tmpl,
+                                    isFlags ? "[Flags]" : "",
+                                    isEnum ? "enum" : (isInterface?"interface":"partial class"),
+                                    type,
+                                    builder.ToString(),
+                                    ns,
+                                    extendsString,
+                                    usingSyntax)
+                                    .Dump();
+                                File.WriteAllText(filepath, def);
+                            }
+                        }
+
+
+
+                        if (tsOut != null && !ignoreJsonClass)
+                        {
+                            var def = string.Format(tsTmpl, "", isEnum ? "enum" : "interface", type, tsBuilder.ToString()).Dump();
+                            tsFile.Append(def);
+                        }
+
+
+                        "".Dump();
                     }
 
-
-
-                    if (tsOut != null && !ignoreJsonClass)
-                    {
-                        var def = string.Format(tsTmpl, "", isEnum ? "enum" : "interface", type, tsBuilder.ToString()).Dump();
-                        tsFile.Append(def);
-                    }
-
-
-                    "".Dump();
                 }
-
             }
 
             if (tsOut != null)
