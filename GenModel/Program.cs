@@ -21,7 +21,8 @@ namespace GenModel
 
         private static readonly string[] NoPlural={
             "Media",
-            "Data"
+            "Data",
+            "Settings"
         };
 
         private static Dictionary<string, string> TsTypeMap = new Dictionary<string, string>()
