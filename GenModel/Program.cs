@@ -27,6 +27,7 @@ namespace GenModel
 
         private static Dictionary<string, string> TsTypeMap = new Dictionary<string, string>()
         {
+            {"object","any" },
             {"bool","boolean" },
             {"int","number" },
             {"double","number" },
@@ -42,7 +43,8 @@ namespace GenModel
             "enum",
             "flags",
             "interface",
-            "jsonIgnore"
+            "jsonIgnore",
+            "notMapped"
         };
 
         private static char[] ExtendSplit = {' ',','};
@@ -314,6 +316,7 @@ namespace GenModel
                         var isEnum = extend.Contains("enum");
                         var isFlags = extend.Contains("flags");
                         var ignoreJsonClass = extend.Contains("jsonIgnore");
+                        var typeNotMapped = extend.Contains("notMapped");
                         var usingNs=new Dictionary<string,bool>();
 
                         type=nameReg.Match(type).Value;
@@ -572,7 +575,7 @@ namespace GenModel
                             }
                         }
 
-                        if (!isEnum && !isInterface)
+                        if (!isEnum && !isInterface && !typeNotMapped)
                         {
                             var pl=type;
                             if(NoPlural.All(np=>!pl.EndsWith(np))){
