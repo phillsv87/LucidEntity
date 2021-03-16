@@ -222,7 +222,7 @@ namespace GenModel
                         continue;
                     }
                     
-                    type = csv.GetField("Text Area 1")?.Trim();
+                    type = csv.GetField("Text Area 1")?.Trim().Trim('"');
                     if(type==null || !type.StartsWith("@")){
                         continue;
                     }
@@ -302,7 +302,7 @@ namespace GenModel
 
                         builder.Clear();
                         tsBuilder.Clear();
-                        type = csv.GetField("Text Area 1");
+                        type = csv.GetField("Text Area 1")?.Trim('"');
                         if(type.StartsWith('@')){
                             continue;
                         }
