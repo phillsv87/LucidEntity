@@ -2,6 +2,7 @@
 param(
     [string]$csOut="null",
     [string]$tsOut="null",
+    [string]$tsHeader="null",
     [string]$dbClass="null",
     [string]$dbInterface="null",
     [string]$dbClassNs="null",
@@ -17,6 +18,7 @@ dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
     -namespace "$namespace" `
     -csOut "$csOut" `
     -tsOut "$tsOut" `
+    -tsHeader "$tsHeader" `
     -dbClass "$dbClass" `
     -dbInterface "$dbInterface" `
     -dbClassNs "$dbClassNs" `

@@ -37,6 +37,7 @@ namespace GenModel
             {"timespan","string" },
             {"datetime","string|Date" },
             {"datetimeoffset","string|Date" },
+            {"nettopologysuite.geometries.point","GeoPoint"}
         };
 
         private static readonly string[] SpecialExtends = {
@@ -86,6 +87,7 @@ namespace GenModel
             string file = null;
             string csOut = null;
             string tsOut = null;
+            string tsHeader = null;
             string dbInterface = null;
             string dbClass = null;
             string dbInterfaceNs = null;
@@ -115,6 +117,13 @@ namespace GenModel
                         tsOut = args[++i];
                         if(tsOut=="null"){
                             tsOut=null;
+                        }
+                        break;
+
+                    case "-tsheader":
+                        tsHeader=args[++i];
+                        if(tsHeader=="null"){
+                            tsHeader=null;
                         }
                         break;
 
@@ -667,6 +676,9 @@ $@"        public static {type} {copy.Key}({type} obj)
 
             if (tsOut != null)
             {
+                if(!string.IsNullOrWhiteSpace(tsHeader)){
+                    tsFile.Insert(0,File.ReadAllText(tsHeader)+"\n");
+                }
                 $"tsOut = {tsOut}".Dump();
                 File.WriteAllText(tsOut, tsFile.ToString());
             }
