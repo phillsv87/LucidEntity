@@ -312,7 +312,7 @@ namespace GenModel
                         builder.Clear();
                         tsBuilder.Clear();
                         type = csv.GetField("Text Area 1")?.Trim('"');
-                        if(type.StartsWith('@')){
+                        if(type.StartsWith('@') || type=="_"){
                             continue;
                         }
                         var parts = type.Split(':',2,StringSplitOptions.None);
