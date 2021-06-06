@@ -96,6 +96,8 @@ namespace GenModel
             string collectionType = "List";
             bool jsonNav=true;
             bool firestore=false;
+            string uidInterface=null;
+            string uidProp="Uid";
 
             for(int i=0;i<args.Length;i++){
                 switch(args[i].ToLower()){
@@ -174,6 +176,17 @@ namespace GenModel
 
                     case "-firestore":
                         firestore=bool.Parse(args[++i]);
+                        break;
+
+                    case "-uidinterface":
+                        uidInterface=args[++i];
+                        if(uidInterface=="null"){
+                            uidInterface=null;
+                        }
+                        break;
+
+                    case "-uidprop":
+                        uidProp=args[++i];
                         break;
 
                     case "-attach-debugger":
@@ -325,7 +338,7 @@ namespace GenModel
                         var extend = (parts.Length > 1 ? parts[1] : string.Empty)
                             .Split(ExtendSplit, StringSplitOptions.RemoveEmptyEntries)
                             .Select(s=>s.Trim())
-                            .ToArray();
+                            .ToList();
                         var isInterface = extend.Contains("interface");
                         var isEnum = extend.Contains("enum");
                         var isFlags = extend.Contains("flags");
@@ -555,6 +568,9 @@ namespace GenModel
                                 if(firestore && !notMapped && json){
                                     builder.Append("        [Google.Cloud.Firestore.FirestoreProperty]\n");
 
+                                }
+                                if(uidInterface!=null && name==uidProp){
+                                    extend.Add(uidInterface);
                                 }
                                 var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                                 if(defaultValue!=null){
