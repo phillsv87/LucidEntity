@@ -10,7 +10,8 @@ param(
     [string]$collectionType="List",
     [string]$jsonNav="true",
     [string]$csv=$(throw "-csv required"),
-    [string]$namespace=$(throw "-namespace required")
+    [string]$namespace=$(throw "-namespace required"),
+    [string]$firestore="false"
 )
 
 dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
@@ -24,4 +25,5 @@ dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
     -dbClassNs "$dbClassNs" `
     -dbInterfaceNs "$dbInterfaceNs" `
     -collectionType "$collectionType" `
-    -jsonNav "$jsonNav"
+    -jsonNav "$jsonNav" `
+    -firestore "$firestore"

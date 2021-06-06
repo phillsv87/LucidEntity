@@ -95,6 +95,7 @@ namespace GenModel
             string ns = null;
             string collectionType = "List";
             bool jsonNav=true;
+            bool firestore=false;
 
             for(int i=0;i<args.Length;i++){
                 switch(args[i].ToLower()){
@@ -169,6 +170,10 @@ namespace GenModel
 
                     case "-jsonnav":
                         jsonNav=bool.Parse(args[++i]);
+                        break;
+
+                    case "-firestore":
+                        firestore=bool.Parse(args[++i]);
                         break;
 
                     case "-attach-debugger":
@@ -547,6 +552,10 @@ namespace GenModel
                                 if(notMapped){
                                     builder.Append("        [NotMapped]\n");
                                 }
+                                if(firestore && !notMapped && json){
+                                    builder.Append("        [Google.Cloud.Firestore.FirestoreProperty]\n");
+
+                                }
                                 var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                                 if(defaultValue!=null){
                                     builder.Append("        [DefaultValue("+defaultValue+")]\n");
@@ -647,7 +656,8 @@ $@"        public static {type} {copy.Key}({type} obj)
                             if(writeToFile){
                                 var def = string.Format(
                                     tmpl,
-                                    isFlags ? "[Flags]" : "",
+                                    (isFlags ? "[Flags]" : "")+
+                                    (firestore && !isEnum && !isInterface?"[Google.Cloud.Firestore.FirestoreData]":""),
                                     isEnum ? "enum" : (isInterface?"interface":"partial class"),
                                     type,
                                     builder.ToString(),
