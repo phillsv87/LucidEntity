@@ -13,6 +13,92 @@ namespace GenModel
     public static class Program
     {
 
+        private class GmType
+        {
+            public string Type{get;set;}
+            public string Collection{get;set;}
+            public List<GmProp> Props{get;}=new List<GmProp>();
+            public GmProp GetProp(string name)
+            {
+                var prop=Props.FirstOrDefault(p=>p.Name==name);
+                if(prop!=null){
+                    return prop;
+                }
+                prop=new GmProp(){Name=name};
+                Props.Add(prop);
+                return prop;
+            }
+        }
+
+        private class GmProp
+        {
+            public string Name{get;set;}
+            public string Type{get;set;}
+            public string BaseType{get;set;}
+            public bool IsRefCollection{get;set;}
+            public bool IsRefSingle{get;set;}
+            public bool IsRefSingleId{get;set;}
+            public GmProp RefIdProp{get;set;}
+        }
+
+        private class GmRelation
+        {
+            public GmType One{get;set;}
+            public GmType Many{get;set;}
+        }
+
+        private enum ConfigOptionType
+        {
+            OneToMany=0,
+            DeleteBehavior=1
+        }
+
+        private class ConfigOption
+        {
+            public ConfigOptionType Type{get;}
+            public List<string> Args{get;}
+
+
+            public string DeleteBehavior{get;}
+
+            public string OneManyTypeOne{get;set;}
+            public string OneManyPropOne{get;set;}
+            public string OneManyTypeMany{get;set;}
+            public string OneManyPropMany{get;set;}
+
+            public ConfigOption(string line)
+            {
+                var args=line.Split(':').Select(o=>o.Trim()).ToList();
+                try{
+                    Type=Enum.Parse<ConfigOptionType>(args[0],true);
+                }catch{
+                    throw new FormatException("Invalid ConfigOption type - "+args[0]);
+                }
+                args.RemoveAt(0);
+                Args=args;
+
+                switch(Type){
+
+                    case ConfigOptionType.DeleteBehavior:
+                        DeleteBehavior=args[0];
+                        break;
+
+                    case ConfigOptionType.OneToMany:
+                        var one=args[0].Split('.').Select(v=>v.Trim()).ToArray();
+                        var many=args[1].Split('.').Select(v=>v.Trim()).ToArray();
+                        if(one.Length!=2 || many.Length!=2){
+                            throw new FormatException("Invlaid OneToMany - "+line);
+                        }
+                        OneManyTypeOne=one[0];
+                        OneManyPropOne=one[1];
+                        OneManyTypeMany=many[0];
+                        OneManyPropMany=many[1];
+                        break;
+
+                }
+            }
+        }
+
         private enum MetaType
         {
             None = 0,
@@ -47,6 +133,8 @@ namespace GenModel
             "jsonIgnore",
             "notMapped"
         };
+
+        private const string ConfigType="_Config_";
 
         private static char[] ExtendSplit = {' ',','};
 
@@ -84,9 +172,13 @@ namespace GenModel
                 args=new string[0];
             }
 
+            var typeMap=new Dictionary<string,GmType>();
+            var configOptions=new List<ConfigOption>();
+
             string file = null;
             string csOut = null;
             string tsOut = null;
+            string dbHookOut = null;
             string tsHeader = null;
             string dbInterface = null;
             string dbClass = null;
@@ -187,6 +279,13 @@ namespace GenModel
 
                     case "-uidprop":
                         uidProp=args[++i];
+                        break;
+
+                    case "-dbhooksout":
+                        dbHookOut=args[++i];
+                        if(dbHookOut=="null"){
+                            dbHookOut=null;
+                        }
                         break;
 
                     case "-attach-debugger":
@@ -296,6 +395,10 @@ namespace GenModel
 
             StringBuilder dbSets=null;
             StringBuilder tsFile=null;
+            StringBuilder dbHooksFile=null;
+            bool hookRefSingle=false;
+            bool hookRefCollection=false;
+            var hookImports=new List<string>();
             StringBuilder dbSetsInterface=null;
             var nameReg=new Regex(@"[\w<>]+");
             var annotationReg=new Regex(@"@([\w!?]+)\s*(:\s*(\w+))?");
@@ -309,6 +412,7 @@ namespace GenModel
                 dbSets = new StringBuilder();
                 dbSetsInterface = new StringBuilder();
                 tsFile = new StringBuilder();
+                dbHooksFile = new StringBuilder();
 
                 var builder = new StringBuilder();
                 var tsBuilder = new StringBuilder();
@@ -349,6 +453,19 @@ namespace GenModel
                         type=nameReg.Match(type).Value;
                         var copyFunctions=new Dictionary<string,List<string>>();
                         var propertyLines=new List<string>();
+                        
+                        var pl=ToPlural(type);
+
+                        if(!typeMap.TryGetValue(type,out var gmType) && type!=ConfigType){
+                            gmType=new GmType()
+                            {
+                                Collection=pl,
+                                Type=type
+                            };
+                            typeMap[type]=gmType;
+                        }
+
+                        
                         for(int i=11;;i++)
                         { // property loop
                             csv.TryGetField<string>(i,out string value);
@@ -362,6 +479,15 @@ namespace GenModel
                             }
 
                             propertyLines.Add(value);
+                        }
+
+                        if(type==ConfigType){
+                            if(pass==2){
+                                foreach(var v in propertyLines){
+                                    configOptions.Add(new ConfigOption(v));
+                                }
+                            }
+                            continue;
                         }
 
                         if(includeGeneratedProps && generatedProperties.TryGetValue(type,out var genLines)){
@@ -455,6 +581,7 @@ namespace GenModel
                             var prop=value.Split(':');
                             string name;
                             string propType;
+                            bool isCollection=false;
                             if(prop.Length==1){
                                 throw new Exception(type+"."+value+" requires a type");
                             }else{
@@ -467,6 +594,8 @@ namespace GenModel
                                 propType=propType.Replace("!","");
                                 isJsonOptional=false;
                             }
+
+                            var basePropType=propType;
                             
                             if(propType.Contains('[')){
                                 if(!jsonNavProp){
@@ -477,7 +606,9 @@ namespace GenModel
                                 }else{
                                     propType=propType.Replace("[","").Replace("]","");
                                 }
+                                basePropType=propType;
                                 propType=collectionType+"<"+propType+">";
+                                isCollection=true;
                             }
 
                             if(annotations.TryGetValue("copy",out att)){
@@ -555,6 +686,11 @@ namespace GenModel
                             }
                             else
                             {
+
+                                var gmProp=gmType.GetProp(name);
+                                gmProp.Type=propType;
+                                gmProp.BaseType=basePropType;
+
                                 if(!json){
                                     builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
                                     builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
@@ -580,6 +716,27 @@ namespace GenModel
                                 if(json){
                                     tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                                 }
+
+                                if(isCollection){
+                                    gmProp.IsRefCollection=true;
+
+                                    var relationConfig=configOptions.FirstOrDefault(c=>
+                                        c.Type==ConfigOptionType.OneToMany &&
+                                        c.OneManyPropMany==name &&
+                                        c.OneManyTypeOne==basePropType);
+
+                                    var revProp=
+                                        (typeMap.TryGetValue(basePropType,out var vp)?vp:null)
+                                        ?.Props.FirstOrDefault(p=>p.IsRefSingle && p.Type==type && p.RefIdProp!=null &&
+                                        (relationConfig==null?true:p.Name==relationConfig.OneManyPropOne));
+                                    
+                                if(revProp!=null){
+                                        dbHooksFile.AppendFormat(dbHookRefCollectionTmpl,
+                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                            type,name,basePropType,pl,ToPlural(basePropType),revProp.RefIdProp.Name);
+                                        hookRefCollection=true;
+                                    }
+                                }
                                 
                                 if( name!="Id" && name.EndsWith("Id") && !notMapped &&
                                     (propType == "int" || propType == "int?" || propType == "Guid" || propType == "Guid?"))
@@ -592,6 +749,14 @@ namespace GenModel
                                     }
                                     
                                     if(propType!="none"){
+                                        gmProp.IsRefSingleId=true;
+
+                                        var gmRefProp=gmType.GetProp(name);
+                                        gmRefProp.IsRefSingle=true;
+                                        gmRefProp.Type=propType;
+                                        gmRefProp.BaseType=propType;
+                                        gmRefProp.RefIdProp=gmProp;
+
                                         if(!jsonNavProp){
                                             builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
                                             builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
@@ -600,8 +765,13 @@ namespace GenModel
                                         if(jsonNavProp){
                                             tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                                         }
+                                        dbHooksFile.AppendFormat(dbHookRefSingleTmpl,
+                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                            type,name,propType,pl,ToPlural(propType),name+"Id");
+                                        hookRefSingle=true;
                                     }
                                 }
+
                                 builder.Append("\n");
                                 if(json){
                                     tsBuilder.Append("\n");
@@ -611,21 +781,6 @@ namespace GenModel
 
                         if (!isEnum && !isInterface && !typeNotMapped)
                         {
-                            var pl=type;
-                            if(NoPlural.All(np=>!pl.EndsWith(np))){
-                                if (pl.EndsWith("s"))
-                                {
-                                    pl += "es";
-                                }
-                                else if (pl.EndsWith("y"))
-                                {
-                                    pl = pl.Substring(0, pl.Length - 1) + "ies";
-                                }
-                                else
-                                {
-                                    pl+="s";
-                                }
-                            }
                             if (dbClass != null)
                             {
                                 dbSets.AppendLine($"        public virtual DbSet<{type}> {pl} {{ get; set; }}");
@@ -687,10 +842,21 @@ $@"        public static {type} {copy.Key}({type} obj)
 
 
 
-                        if (tsOut != null && !ignoreJsonClass)
-                        {
-                            var def = string.Format(tsTmpl, "", isEnum ? "enum" : "interface", type, tsBuilder.ToString()).Dump();
-                            tsFile.Append(def);
+                        if(!ignoreJsonClass){
+                            if (tsOut != null)
+                            {
+                                var def = string.Format(tsTmpl, "", isEnum ? "enum" : "interface", type, tsBuilder.ToString()).Dump();
+                                tsFile.Append(def);
+                            }
+
+                            if(dbHookOut!=null && !isEnum)
+                            {
+                                var def = string.Format(dbHookTmpl,type,pl).Dump();
+                                dbHooksFile.Append(def);
+                                if(!hookImports.Contains(type)){
+                                    hookImports.Add(type);
+                                }
+                            }
                         }
 
 
@@ -709,8 +875,54 @@ $@"        public static {type} {copy.Key}({type} obj)
                 File.WriteAllText(tsOut, tsFile.ToString());
             }
 
+            if(dbHookOut!=null)
+            {
+                $"dbHookOut = {dbHookOut}".Dump();
+                var fileName=Path.GetFileName(tsOut??"types.ts").Split('.')[0];
+                dbHooksFile.Insert(0,$"import {{ {string.Join(", ",hookImports)} }} from './{fileName}';\n");
+                var libHookImports=new List<string>();
+                libHookImports.Add("useObj");
+                if(hookRefSingle){
+                    libHookImports.Add("useObjSingleRef");
+                }
+                if(hookRefCollection){
+                    libHookImports.Add("useObjCollectionRef");
+                }
+                dbHooksFile.Insert(0,
+                    "// this file is generated using MakeTypes.ps1. Do not manually modify.\n"+
+                    $"import {{ {string.Join(", ",libHookImports)} }} from '../db/db-hooks';\n"+
+                    "import { IdParam } from '../db/db-types';\n");
+                File.WriteAllText(dbHookOut, dbHooksFile.ToString());
+            }
+
             if (dbClass != null)
             {
+
+
+                var configBody=new StringBuilder();
+                foreach(var opt in configOptions){
+                    switch(opt.Type){
+
+                        case ConfigOptionType.DeleteBehavior:
+                            configBody.Append(@$"
+            foreach (var relationship in modelBuilder.Model.GetEntityTypes().SelectMany(e=>e.GetForeignKeys()))
+            {{
+                relationship.DeleteBehavior = DeleteBehavior.{opt.DeleteBehavior};
+            }}
+");
+                            break;
+
+                        case ConfigOptionType.OneToMany:
+                            configBody.Append(@$"
+            modelBuilder.Entity<{opt.OneManyTypeOne}>()
+                .HasOne(e=>e.{opt.OneManyPropOne})
+                .WithMany(e=>e.{opt.OneManyPropMany});
+");
+                            break;
+
+                    }
+                }
+
                 var name = Path.GetFileName(dbClass);
                 int x = name.IndexOf('.');
                 if (x != -1)
@@ -721,7 +933,8 @@ $@"        public static {type} {copy.Key}({type} obj)
                     dbSetTmpl,
                     dbClassNs,
                     "class " + name,
-                    dbSets.ToString());
+                    dbSets.ToString(),
+                    configBody.ToString());
                 File.WriteAllText(dbClass, value);
                 value.Dump();
             }
@@ -735,13 +948,32 @@ $@"        public static {type} {copy.Key}({type} obj)
                     name = name.Substring(0,x);
                 }
                 var value = string.Format(
-                    dbSetTmpl,
+                    dbInfTmpl,
                     dbInterfaceNs,
                     "interface " + name,
                     dbSetsInterface.ToString());
                 File.WriteAllText(dbInterface, value);
                 value.Dump();
             }
+        }
+
+        static string ToPlural(string pl)
+        {
+            if(NoPlural.All(np=>!pl.EndsWith(np))){
+                if (pl.EndsWith("s"))
+                {
+                    pl += "es";
+                }
+                else if (pl.EndsWith("y"))
+                {
+                    pl = pl.Substring(0, pl.Length - 1) + "ies";
+                }
+                else
+                {
+                    pl+="s";
+                }
+            }
+            return pl;
         }
 
         static T Dump<T>(this T obj){
@@ -765,7 +997,7 @@ namespace {4}
 }}
 ";
 
-const string dbSetTmpl =
+const string dbInfTmpl =
 @"using System;
 using Microsoft.EntityFrameworkCore;
 
@@ -778,6 +1010,25 @@ namespace {0}
 }}
 ";
 
+const string dbSetTmpl =
+@"using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+
+namespace {0}
+{{
+    public partial {1}
+    {{
+{2}
+
+        private void ConfigureModel(ModelBuilder modelBuilder)
+        {{
+{3}
+        }}
+    }}
+}}
+";
+
 const string tsTmpl =
 @"
 
@@ -785,6 +1036,33 @@ const string tsTmpl =
 export {1} {2}
 {{
 {3}
+}}
+";
+
+const string dbHookTmpl =
+@"
+
+export function use{0}(id:IdParam):{0}|null|undefined
+{{
+    return useObj<{0}>('{1}',id);
+}}
+";
+
+const string dbHookRefSingleTmpl =//0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+@"
+
+export function use{0}Ref{1}(id:IdParam):{2}|null|undefined
+{{
+    return useObjSingleRef<{0},{2}>('{3}',id,'{4}',null,'{5}');
+}}
+";
+
+const string dbHookRefCollectionTmpl =//0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+@"
+
+export function use{0}Ref{1}(id:IdParam):{2}[]|null|undefined
+{{
+    return useObjCollectionRef<{0},{2}>('{3}',id,'{4}','{1}','{5}');
 }}
 ";
     }
