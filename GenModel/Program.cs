@@ -892,6 +892,13 @@ $@"        public static {type} {copy.Key}({type} obj)
                     "// this file is generated using MakeTypes.ps1. Do not manually modify.\n"+
                     $"import {{ {string.Join(", ",libHookImports)} }} from '../db/db-hooks';\n"+
                     "import { IdParam } from '../db/db-types';\n");
+
+                dbHooksFile.Append("export const collections={");
+                foreach(var i in hookImports){
+                    var pl=ToPlural(i);
+                    dbHooksFile.Append($"\n    {pl}:\"{pl}\",");
+                }
+                dbHooksFile.Append("}\n");
                 File.WriteAllText(dbHookOut, dbHooksFile.ToString());
             }
 
