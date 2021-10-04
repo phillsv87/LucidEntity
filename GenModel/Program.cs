@@ -190,6 +190,8 @@ namespace GenModel
             bool firestore=false;
             string uidInterface=null;
             string uidProp="Uid";
+            bool autoICreated=false;
+            bool autoICompleted=false;
 
             for(int i=0;i<args.Length;i++){
                 switch(args[i].ToLower()){
@@ -295,6 +297,14 @@ namespace GenModel
                             System.Threading.Thread.Sleep(100);
                         }
                         System.Diagnostics.Debugger.Break();
+                        break;
+
+                    case "-autoicreated":
+                        autoICreated=bool.Parse(args[++i]);
+                        break;
+
+                    case "-autoicompleted":
+                        autoICompleted=bool.Parse(args[++i]);
                         break;
 
 
@@ -708,6 +718,12 @@ namespace GenModel
                                 if(uidInterface!=null && name==uidProp){
                                     extend.Add(uidInterface);
                                 }
+                                if(name=="Created" && autoICreated){
+                                    extend.Add("ICreated");
+                                }
+                                if(name=="Completed" && autoICreated){
+                                    extend.Add("ICompleted");
+                                }
                                 var defaultSyntax=defaultValue==null?"":" = "+defaultValue+";";
                                 if(defaultValue!=null){
                                     builder.Append("        [DefaultValue("+defaultValue+")]\n");
@@ -812,6 +828,7 @@ $@"        public static {type} {copy.Key}({type} obj)
                             $"// {filepath}".Dump();
 
                             var extendsString = string.Join(", ", extend
+                                .Distinct()
                                 .Where(e => !SpecialExtends.Contains(e) && !e.Contains(':')));
 
                             var wheres=extend.Where(e=>e.Contains(':')).Select(e=>"where "+e).ToList();
@@ -962,6 +979,26 @@ $@"        public static {type} {copy.Key}({type} obj)
                 File.WriteAllText(dbInterface, value);
                 value.Dump();
             }
+
+            if(autoICreated){
+                var filepath = Path.GetFullPath(Path.Combine(csOut,"ICreated.cs"));
+                $"// {filepath}".Dump();
+                var value = string.Format(
+                    iCreatedTmpl,
+                    dbInterfaceNs);
+                File.WriteAllText(filepath, value);
+                value.Dump();
+            }
+
+            if(autoICompleted){
+                var filepath = Path.GetFullPath(Path.Combine(csOut,"ICompleted.cs"));
+                $"// {filepath}".Dump();
+                var value = string.Format(
+                    iCompletedTmpl,
+                    dbInterfaceNs);
+                File.WriteAllText(filepath, value);
+                value.Dump();
+            }
         }
 
         static string ToPlural(string pl)
@@ -1032,6 +1069,32 @@ namespace {0}
         {{
 {3}
         }}
+    }}
+}}
+";
+
+const string iCreatedTmpl = 
+@"using System;
+
+namespace {0}
+{{
+    
+    public interface ICreated
+    {{
+        DateTimeOffset Created {{ get; set; }}
+    }}
+}}
+";
+
+const string iCompletedTmpl = 
+@"using System;
+
+namespace {0}
+{{
+    
+    public interface ICompleted
+    {{
+        DateTimeOffset? Completed {{ get; set; }}
     }}
 }}
 ";

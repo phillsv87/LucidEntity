@@ -14,7 +14,9 @@ param(
     [string]$namespace=$(throw "-namespace required"),
     [string]$firestore="false",
     [string]$uidInterface="null",
-    [string]$uidProp="Uid"
+    [string]$uidProp="Uid",
+    [string]$autoICreated="false",
+    [string]$autoICompleted="false"
 )
 
 dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
@@ -32,4 +34,6 @@ dotnet run --project "$PSScriptRoot/GenModel" -c Release -- `
     -jsonNav "$jsonNav" `
     -firestore "$firestore" `
     -uidInterface "$uidInterface" `
-    -uidProp "$uidProp"
+    -uidProp "$uidProp" `
+    -autoICreated "$autoICreated" `
+    -autoICompleted "$autoICompleted"
