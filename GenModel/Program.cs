@@ -50,21 +50,30 @@ namespace GenModel
         private enum ConfigOptionType
         {
             OneToMany=0,
-            DeleteBehavior=1
+            DeleteBehavior=1,
+            Index=2
         }
 
         private class ConfigOption
         {
             public ConfigOptionType Type{get;}
-            public List<string> Args{get;}
+            public List<string> Args{get;set;}
 
 
-            public string DeleteBehavior{get;}
+            public string DeleteBehavior{get;set;}
 
             public string OneManyTypeOne{get;set;}
             public string OneManyPropOne{get;set;}
             public string OneManyTypeMany{get;set;}
             public string OneManyPropMany{get;set;}
+
+            public string ClassName{get;set;}
+            public string PropertyName{get;set;}
+
+            public ConfigOption(ConfigOptionType type)
+            {
+                Type=type;
+            }
 
             public ConfigOption(string line)
             {
@@ -415,8 +424,9 @@ namespace GenModel
             var generatedProperties=new Dictionary<string,List<string>>();
 
             for(int pass=2;pass<=3;pass++){
-                var writeToFile=pass==3;
-                var includeGeneratedProps=pass==3;
+                var isLastPass=pass==3;
+                var writeToFile=isLastPass;
+                var includeGeneratedProps=isLastPass;
                 var generateProperties=pass==2;
 
                 dbSets = new StringBuilder();
@@ -577,6 +587,13 @@ namespace GenModel
                                 }
                             }
 
+                            bool isIndex=false;
+                            if(annotations.TryGetValue("index",out att)){
+                                if(!bool.TryParse(att,out isIndex)){
+                                    throw new FormatException("Invalid @index annotation format: @index:"+att);
+                                }
+                            }
+
                             bool notMapped=false;
                             if(annotations.TryGetValue("notMapped",out att)){
                                 if(!bool.TryParse(att,out notMapped)){
@@ -685,6 +702,13 @@ namespace GenModel
                                             .Replace("{propType}",propType).Trim());
                                     }
                                 }
+                            }
+
+                            if(isIndex && isLastPass){
+                                configOptions.Add(new ConfigOption(ConfigOptionType.Index){
+                                    ClassName=type,
+                                    PropertyName=name
+                                });
                             }
 
                             if (isEnum)
@@ -941,6 +965,13 @@ $@"        public static {type} {copy.Key}({type} obj)
             modelBuilder.Entity<{opt.OneManyTypeOne}>()
                 .HasOne(e=>e.{opt.OneManyPropOne})
                 .WithMany(e=>e.{opt.OneManyPropMany});
+");
+                            break;
+
+                        case ConfigOptionType.Index:
+                            configBody.Append(@$"
+            modelBuilder.Entity<{opt.ClassName}>()
+                .HasIndex(e=>e.{opt.PropertyName});
 ");
                             break;
 
