@@ -415,6 +415,7 @@ namespace GenModel
             StringBuilder dbSets=null;
             StringBuilder tsFile=null;
             StringBuilder dbHooksFile=null;
+            StringBuilder dbDomainFile=null;
             bool hookRefSingle=false;
             bool hookRefCollection=false;
             var hookImports=new List<string>();
@@ -433,6 +434,7 @@ namespace GenModel
                 dbSetsInterface = new StringBuilder();
                 tsFile = new StringBuilder();
                 dbHooksFile = new StringBuilder();
+                dbDomainFile = new StringBuilder();
 
                 var builder = new StringBuilder();
                 var tsBuilder = new StringBuilder();
@@ -774,6 +776,9 @@ namespace GenModel
                                         dbHooksFile.AppendFormat(dbHookRefCollectionTmpl,
                                             //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
                                             type,name,basePropType,pl,ToPlural(basePropType),revProp.RefIdProp.Name);
+                                        dbDomainFile.AppendFormat(dbDomainRefCollectionTmpl,
+                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                            type,name,basePropType,pl,ToPlural(basePropType),revProp.RefIdProp.Name);
                                         hookRefCollection=true;
                                     }
                                 }
@@ -806,6 +811,9 @@ namespace GenModel
                                             tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                                         }
                                         dbHooksFile.AppendFormat(dbHookRefSingleTmpl,
+                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                            type,name,propType,pl,ToPlural(propType),name+"Id");
+                                        dbDomainFile.AppendFormat(dbDomainRefSingleTmpl,
                                             //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
                                             type,name,propType,pl,ToPlural(propType),name+"Id");
                                         hookRefSingle=true;
@@ -894,6 +902,8 @@ $@"        public static {type} {copy.Key}({type} obj)
                             {
                                 var def = string.Format(dbHookTmpl,type,pl).Dump();
                                 dbHooksFile.Append(def);
+                                def = string.Format(dbDomainTmpl,type,pl).Dump();
+                                dbDomainFile.Append(def);
                                 if(!hookImports.Contains(type)){
                                     hookImports.Add(type);
                                 }
@@ -932,7 +942,8 @@ $@"        public static {type} {copy.Key}({type} obj)
                 dbHooksFile.Insert(0,
                     "// this file is generated using MakeTypes.ps1. Do not manually modify.\n"+
                     $"import {{ {string.Join(", ",libHookImports)} }} from '../db/db-hooks';\n"+
-                    "import { IdParam } from '../db/db-types';\n");
+                    "import { IdParam } from '../db/db-types';\n"+
+                    "import ClientDb, { IDomain } from '../db/ClientDb';\n");
 
                 dbHooksFile.Append("export const collections={");
                 foreach(var i in hookImports){
@@ -940,6 +951,7 @@ $@"        public static {type} {copy.Key}({type} obj)
                     dbHooksFile.Append($"\n    {pl}:\"{pl}\",");
                 }
                 dbHooksFile.Append("}\n");
+                dbHooksFile.AppendFormat(dbDomainClassTmpl,dbDomainFile.ToString());
                 File.WriteAllText(dbHookOut, dbHooksFile.ToString());
             }
 
@@ -1164,6 +1176,49 @@ const string dbHookRefCollectionTmpl =//0 BaseType, 1 RefProperty, 2 RefType, 3 
 export function use{0}Ref{1}(id:IdParam):{2}[]|null|undefined
 {{
     return useObjCollectionRef<{0},{2}>('{3}',id,'{4}','{1}','{5}');
+}}
+";
+
+const string dbDomainTmpl =
+@"
+    public async get{0}Async(id:IdParam):Promise<{0}|null>
+    {{
+        if(!this.db){{return null}}
+        return await this.db.getObjAsync<{0}>('{1}',id);
+    }}
+";
+
+const string dbDomainRefSingleTmpl =//0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+@"
+    public async get{0}Ref{1}Async(id:IdParam):Promise<{2}|null>
+    {{
+        if(!this.db){{return null}}
+        return await this.db.getObjRefSingle<{0},{2}>('{3}',id,'{4}',null,'{5}');
+    }}
+";
+
+const string dbDomainRefCollectionTmpl =//0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+@"
+    public async get{0}Ref{1}Async(id:IdParam):Promise<{2}[]|null>
+    {{
+        if(!this.db){{return null}}
+        return await this.db.getObjRefCollection<{0},{2}>('{3}',id,'{4}','{1}','{5}');
+    }}
+";
+
+const string dbDomainClassTmpl =
+@"
+
+export class DbDomain implements IDomain
+{{
+    private db:ClientDb|null=null;
+    public setDb(db:ClientDb){{
+        if(this.db){{
+            throw new Error(""db already set"");
+        }}
+        this.db=db;
+    }}
+    {0}
 }}
 ";
     }
