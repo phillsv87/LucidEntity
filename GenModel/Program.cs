@@ -861,7 +861,11 @@ $@"        public static {type} {copy.Key}({type} obj)
 
                             var extendsString = string.Join(", ", extend
                                 .Distinct()
-                                .Where(e => !SpecialExtends.Contains(e) && !e.Contains(':')));
+                                .Where(e =>!SpecialExtends.Contains(e) && !e.StartsWith("@")  && !e.Contains(':')));
+
+                            var customAtts=string.Join(' ',extend
+                                .Where(e=>e.StartsWith("@"))
+                                .Select(e=>'['+e.Substring(1)+']'));
 
                             var wheres=extend.Where(e=>e.Contains(':')).Select(e=>"where "+e).ToList();
                             if(wheres.Count>0){
@@ -876,6 +880,7 @@ $@"        public static {type} {copy.Key}({type} obj)
                             if(writeToFile){
                                 var def = string.Format(
                                     tmpl,
+                                    customAtts+
                                     (isFlags ? "[Flags]" : "")+
                                     (firestore && !isEnum && !isInterface?"[Google.Cloud.Firestore.FirestoreData]":""),
                                     isEnum ? "enum" : (isInterface?"interface":"partial class"),
