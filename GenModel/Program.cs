@@ -488,7 +488,7 @@ namespace GenModel
                         }
 
                         
-                        for(int i=11;;i++)
+                        for(int i=csv.GetFieldIndex("Text Area 2");;i++)
                         { // property loop
                             csv.TryGetField<string>(i,out string value);
                             if(string.IsNullOrWhiteSpace(value)){
