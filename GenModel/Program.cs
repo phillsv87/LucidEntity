@@ -1179,6 +1179,10 @@ namespace {0}
 
         public static object AuthorizeQuery(Type type, int[] ids, object query)
         {{
+            if(ids==null){{
+                ids=Array.Empty<int>();
+            }}
+
             switch(type.Name){{
 {4}
             }}
