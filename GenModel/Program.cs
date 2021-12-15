@@ -18,6 +18,7 @@ namespace GenModel
             public string Type{get;set;}
             public string Collection{get;set;}
             public List<GmProp> Props{get;}=new List<GmProp>();
+            public GmProp AuthProp{get;set;}
             public GmProp GetProp(string name)
             {
                 var prop=Props.FirstOrDefault(p=>p.Name==name);
@@ -34,10 +35,12 @@ namespace GenModel
         {
             public string Name{get;set;}
             public string Type{get;set;}
+            public bool IsTypeNullable=>Type?.EndsWith('?')==true;
             public string BaseType{get;set;}
             public bool IsRefCollection{get;set;}
             public bool IsRefSingle{get;set;}
             public bool IsRefSingleId{get;set;}
+            public bool IsAuth{get;set;}
             public GmProp RefIdProp{get;set;}
         }
 
@@ -685,6 +688,13 @@ namespace GenModel
                                 isJsonOptional=jsonOptional;
                             }
 
+                            bool isAuthProp=false;
+                            if(annotations.TryGetValue("auth",out att)){
+                                if(!bool.TryParse(att,out isAuthProp)){
+                                    throw new FormatException("Invalid @json annotation format: @json:"+att);
+                                }
+                            }
+
                             if(gen!=null && generateProperties){
                                 foreach(var genName in gen){
                                     if(!generators.TryGetValue(genName,out var genTemplates)){
@@ -726,6 +736,11 @@ namespace GenModel
                                 var gmProp=gmType.GetProp(name);
                                 gmProp.Type=propType;
                                 gmProp.BaseType=basePropType;
+
+                                if(isAuthProp){
+                                    gmProp.IsAuth=true;
+                                    gmType.AuthProp=gmProp;
+                                }
 
                                 if(!json){
                                     builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
@@ -995,6 +1010,26 @@ $@"        public static {type} {copy.Key}({type} obj)
                     }
                 }
 
+                var authBody=new StringBuilder();
+                foreach(var type in typeMap.Select(t=>t.Value).OrderBy(t=>t.Type)){
+                    var authProp=type.AuthProp;
+                    if(authProp==null){
+                        continue;
+                    }
+                    var expression=GetAuthExpression(typeMap,authProp,0);
+                    if(expression==null){
+                        continue;
+                    }
+
+                    authBody.Append(@$"
+                case nameof({type.Type}):
+                    query=((IQueryable<{type.Type}>)query)
+                        .QWhere(e0=>{expression});
+                    break;
+");
+                }
+
+
                 var name = Path.GetFileName(dbClass);
                 int x = name.IndexOf('.');
                 if (x != -1)
@@ -1006,7 +1041,8 @@ $@"        public static {type} {copy.Key}({type} obj)
                     dbClassNs,
                     "class " + name,
                     dbSets.ToString(),
-                    configBody.ToString());
+                    configBody.ToString(),
+                    authBody.ToString());
                 File.WriteAllText(dbClass, value);
                 value.Dump();
             }
@@ -1046,6 +1082,29 @@ $@"        public static {type} {copy.Key}({type} obj)
                     dbInterfaceNs);
                 File.WriteAllText(filepath, value);
                 value.Dump();
+            }
+        }
+
+        static string GetAuthExpression(Dictionary<string,GmType> typeMap, GmProp authProp, int depth)
+        {
+            if(authProp.IsRefCollection){
+                if(authProp.BaseType==null){
+                    return null;
+                }
+                if(typeMap.TryGetValue(authProp.BaseType,out var revType)){
+                    var nextAuth=revType.AuthProp;
+                    if(nextAuth!=null){
+                        return $"e{depth}.{authProp.Name}.Any(e{depth+1}=>{GetAuthExpression(typeMap,nextAuth,depth+1)})";
+                    }
+                    return null;
+                }
+                return null;
+            }else{
+                if(authProp.IsTypeNullable){
+                    return $"e{depth}.{authProp.Name}.HasValue && ids.Contains(e{depth}.{authProp.Name}.Value)";
+                }else{
+                    return $"ids.Contains(e{depth}.{authProp.Name})";
+                }
             }
         }
 
@@ -1116,6 +1175,15 @@ namespace {0}
         private void ConfigureModel(ModelBuilder modelBuilder)
         {{
 {3}
+        }}
+
+        public static object AuthorizeQuery(Type type, int[] ids, object query)
+        {{
+            switch(type.Name){{
+{4}
+            }}
+
+            return query;
         }}
     }}
 }}
