@@ -17,6 +17,7 @@ namespace GenModel
         {
             public string Type{get;set;}
             public string Collection{get;set;}
+            public bool DisablCrud{get;set;}
             public List<GmProp> Props{get;}=new List<GmProp>();
             public GmProp AuthProp{get;set;}
             public GmProp GetProp(string name)
@@ -380,7 +381,7 @@ namespace GenModel
                         continue;
                     }
 
-                    for(int i=11;;i++)
+                    for(int i=csv.GetFieldIndex("Text Area 2");;i++)
                     { // property loop
                         csv.TryGetField<string>(i,out string value);
                         if(string.IsNullOrWhiteSpace(value)){
@@ -473,6 +474,7 @@ namespace GenModel
                         var isFlags = extend.Contains("flags");
                         var ignoreJsonClass = extend.Contains("jsonIgnore");
                         var typeNotMapped = extend.Contains("notMapped");
+                        var noCrud=extend.Contains("@DisableCrud");
                         var usingNs=new Dictionary<string,bool>();
 
                         type=nameReg.Match(type).Value;
@@ -485,7 +487,8 @@ namespace GenModel
                             gmType=new GmType()
                             {
                                 Collection=pl,
-                                Type=type
+                                Type=type,
+                                DisablCrud=noCrud,
                             };
                             typeMap[type]=gmType;
                         }
@@ -782,12 +785,14 @@ namespace GenModel
                                         c.OneManyPropMany==name &&
                                         c.OneManyTypeOne==basePropType);
 
+                                    var revGmType=typeMap.TryGetValue(basePropType,out var vp)?vp:null;
+
                                     var revProp=
-                                        (typeMap.TryGetValue(basePropType,out var vp)?vp:null)
+                                        revGmType
                                         ?.Props.FirstOrDefault(p=>p.IsRefSingle && p.Type==type && p.RefIdProp!=null &&
                                         (relationConfig==null?true:p.Name==relationConfig.OneManyPropOne));
                                     
-                                if(revProp!=null){
+                                if(revProp!=null && !gmType.DisablCrud && revGmType?.DisablCrud!=true){
                                         dbHooksFile.AppendFormat(dbHookRefCollectionTmpl,
                                             //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
                                             type,name,basePropType,pl,ToPlural(basePropType),revProp.RefIdProp.Name);
@@ -825,13 +830,15 @@ namespace GenModel
                                         if(jsonNavProp){
                                             tsBuilder.Append($"    {name}{(isJsonOptional?"?":"")}:{ToTsType(propType)};\n");
                                         }
-                                        dbHooksFile.AppendFormat(dbHookRefSingleTmpl,
-                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
-                                            type,name,propType,pl,ToPlural(propType),name+"Id");
-                                        dbDomainFile.AppendFormat(dbDomainRefSingleTmpl,
-                                            //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
-                                            type,name,propType,pl,ToPlural(propType),name+"Id");
-                                        hookRefSingle=true;
+                                        if(!gmType.DisablCrud){
+                                            dbHooksFile.AppendFormat(dbHookRefSingleTmpl,
+                                                //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                                type,name,propType,pl,ToPlural(propType),name+"Id");
+                                            dbDomainFile.AppendFormat(dbDomainRefSingleTmpl,
+                                                //0 BaseType, 1 RefProperty, 2 RefType, 3 BaseCollection, 4 RefCollection, 5 foreignKey
+                                                type,name,propType,pl,ToPlural(propType),name+"Id");
+                                            hookRefSingle=true;
+                                        }
                                     }
                                 }
 
@@ -918,7 +925,7 @@ $@"        public static {type} {copy.Key}({type} obj)
                                 tsFile.Append(def);
                             }
 
-                            if(dbHookOut!=null && !isEnum)
+                            if(dbHookOut!=null && !isEnum && !gmType.DisablCrud)
                             {
                                 var def = string.Format(dbHookTmpl,type,pl).Dump();
                                 dbHooksFile.Append(def);
