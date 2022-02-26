@@ -825,6 +825,8 @@ namespace GenModel
                                         if(!jsonNavProp){
                                             builder.Append("        [Newtonsoft.Json.JsonIgnore]\n");
                                             builder.Append("        [System.Text.Json.Serialization.JsonIgnore]\n");
+                                        }else if(firestore && !notMapped && json){
+                                            builder.Append("        [Google.Cloud.Firestore.FirestoreProperty]\n");
                                         }
                                         builder.Append($"        {(isInterface ? "" : "public ")}{propType} {name} {{ get; set; }}\n");
                                         if(jsonNavProp){
