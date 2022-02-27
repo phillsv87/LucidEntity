@@ -756,7 +756,13 @@ namespace GenModel
                                     builder.Append("        [NotMapped]\n");
                                 }
                                 if(firestore && !notMapped && json){
-                                    builder.Append("        [Google.Cloud.Firestore.FirestoreProperty]\n");
+                                    
+                                    if(propType.StartsWith("DateTime")){
+                                        var dType=propType.Replace("?","");
+                                        builder.Append($"        [Google.Cloud.Firestore.FirestoreProperty(ConverterType=typeof(Firestore.{dType}Converter))]\n");
+                                    }else{
+                                        builder.Append("        [Google.Cloud.Firestore.FirestoreProperty]\n");
+                                    }
 
                                 }
                                 if(uidInterface!=null && name==uidProp){
